@@ -1,4 +1,4 @@
-import '../../styles/global.css'
+import '../../assets/global.css'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 

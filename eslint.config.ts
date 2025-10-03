@@ -16,7 +16,7 @@ export default [
     settings: {
       react: { version: 'detect' },
       'better-tailwindcss': {
-        entryPoint: 'src/styles/global.css',
+        entryPoint: 'src/assets/global.css',
       },
     },
   },

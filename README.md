@@ -1,3 +1,10 @@
-# WXT + React
+# Command Palette for the web (Chrome, Firefox, Edge) Extension
 
-This template should help get you started developing with React in WXT.
+Tehnolgies used:
+
+- React
+- Tailwind CSS
+- Vite
+- WXT
+- TypeScript
+- pnpm (package manager)
