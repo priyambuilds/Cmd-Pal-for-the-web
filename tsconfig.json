@@ -1,0 +1,53 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    /* Language & libs */
+    "target": "ES2022",
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+
+    /* Module system */
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    /* Interop & safety */
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Paths/Aliases (match wxt.config.ts alias) */
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@/components/*": ["src/components/*"],
+      "@/utils/*": ["src/utils/*"],
+      "@/types/*": ["src/types/*"],
+      "@/ui/*": ["src/components/ui/*"],
+      "@/lib/*": ["src/lib/*"],
+      "@/styles/*": ["src/styles/*"]
+    },
+
+    /* Types: add Chrome + webextension and WXT auto-imports */
+    "types": ["chrome", "webextension-polyfill"]
+  },
+  "include": [
+    "src",
+    "wxt.config.ts",
+    ".wxt/types",
+    "web-ext.config.ts",
+    "vitest.config.ts",
+    "test/setup.ts"
+  ],
+  "exclude": ["node_modules", "dist", ".output"]
+}
