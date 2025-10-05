@@ -16,7 +16,6 @@ export default defineConfig({
       description: 'Command Pallete for the web',
       version: '1.0.0',
 
-      permissions: ['storage', 'scripting', 'activeTab'],
       host_permissions: ['*://*.youtube.com/*'],
 
       action: {
@@ -44,13 +43,12 @@ export default defineConfig({
       }),
 
       commands: {
-        'toggle-zen': {
-          suggested_key: { default: 'Alt+Z' },
-          description: 'Toggle Zen Mode',
-        },
-        'toggle-search-only': {
-          suggested_key: { default: 'Alt+Shift+S' },
-          description: 'Toggle Search-only Mode',
+        'toggle-palette': {
+          suggested_key: {
+            default: 'Ctrl+K',
+            mac: 'Command+K',
+          },
+          description: 'Toggle command palette',
         },
       },
 
