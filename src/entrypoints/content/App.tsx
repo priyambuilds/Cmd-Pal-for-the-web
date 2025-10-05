@@ -3,6 +3,7 @@ import Command from '@/components/Command'
 import CommandInput from '@/components/CommandInput'
 import CommandList from '@/components/CommandList'
 import CommandItem from '@/components/CommandItem'
+import CommandEmpty from '@/components/CommandEmpty'
 
 export default function App() {
   const [open, setOpen] = useState(false)
@@ -121,6 +122,14 @@ export default function App() {
                 </div>
               </div>
             </CommandItem>
+            <CommandEmpty>
+              <div className="space-y-2">
+                <p className="font-medium">No results found</p>
+                <p className="text-xs">
+                  Try searching for something else or check your spelling.
+                </p>
+              </div>
+            </CommandEmpty>
           </CommandList>
         </Command>
       </div>
