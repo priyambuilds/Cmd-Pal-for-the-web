@@ -41,6 +41,7 @@ import type { CommandProps, CommandState } from '@/types/types'
  * Controlled:
  *   <Command label="Search" value={search} onValueChange={setSearch}>...</Command>
  */
+
 export default function Command({
   label,
   value,
@@ -49,38 +50,31 @@ export default function Command({
   loop = false,
   children,
 }: CommandProps) {
-  // Generate a stable unique ID for accessibility
-  // This will be used for aria-controls, aria-labelledby, etc.
   const id = useId()
 
-  // Create the store only once when component mounts
-  // useRef ensures the same store instance persists across re-renders
-  const storeRef = useRef<ReturnType<typeof createStore>>()
+  const storeRef = useRef<ReturnType<typeof createStore> | null>(null)
 
   if (!storeRef.current) {
-    // initialize store with default state
     const initialState: CommandState = {
       open: false,
-      search: value ?? '', // use controlled value if provided, otherwise use empty string
+      search: value ?? '',
       activeId: null,
       loop,
     }
+
     storeRef.current = createStore(initialState)
   }
+
   const store = storeRef.current
 
-  // Sync controled vlaue changes to the store
   useEffect(() => {
     if (value !== undefined) {
-      // Component is in controlled mode
-      // Update store when parent changes the value
       store.setState({ search: value })
     }
   }, [value, store])
 
-  // Sync loop prop changes to the store
   useEffect(() => {
-    store.setState({ loop })
+    store.setState({ loop: loop })
   }, [loop, store])
 
   return (

@@ -1,4 +1,3 @@
-import '../../assets/global.css'
 import { createRoot } from 'react-dom/client'
 import Options from './App'
 

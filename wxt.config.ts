@@ -16,7 +16,8 @@ export default defineConfig({
       description: 'Command Pallete for the web',
       version: '1.0.0',
 
-      host_permissions: ['*://*.youtube.com/*'],
+      permissions: ['tabs', 'storage', 'bookmarks', 'history'],
+      host_permissions: ['<all_urls>'],
 
       action: {
         default_title: 'Cmd Pal',
@@ -45,8 +46,8 @@ export default defineConfig({
       commands: {
         'toggle-palette': {
           suggested_key: {
-            default: 'Ctrl+K',
-            mac: 'Command+K',
+            default: 'Ctrl+M',
+            mac: 'Command+M',
           },
           description: 'Toggle command palette',
         },

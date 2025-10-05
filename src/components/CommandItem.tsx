@@ -18,7 +18,7 @@ Parent component handles action
  * A single command/action in the palette.
  * Handles filtering, selection, and keyboard navigation.
  */
-export function CommandItem({
+export default function CommandItem({
   id: providedId,
   value,
   keywords = [],
