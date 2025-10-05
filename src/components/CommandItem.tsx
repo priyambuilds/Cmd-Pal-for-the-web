@@ -1,7 +1,7 @@
 import { useId, useMemo, useSyncExternalStore } from 'react'
 import { useCommandContext } from '@/types/context'
 import type { CommandItemProps } from '@/types/types'
-
+import commandScore from 'command-score'
 /**
 User clicks item OR presses Enter
      ↓
@@ -49,22 +49,18 @@ export default function CommandItem({
   // Calculate match score
   // For now, simple contains check - we'll add command-score later
   const score = useMemo(() => {
-    if (!search) return 1 // No search = show everything
+    if (!search) return 1
 
-    const searchLower = search.toLowerCase()
-    const valueLower = value.toLowerCase()
+    // Score the main value using command-score
+    let maxScore = commandScore(value, search)
 
-    // Check main value
-    if (valueLower.includes(searchLower)) return 1
+    // Also check keywords and take the best score
+    keywords.forEach(kw => {
+      const keywordScore = commandScore(kw, search)
+      maxScore = Math.max(maxScore, keywordScore)
+    })
 
-    // Check keywords
-    const keywordMatch = keywords.some(kw =>
-      kw.toLowerCase().includes(searchLower)
-    )
-
-    if (keywordMatch) return 0.8
-
-    return 0 // No match
+    return maxScore
   }, [search, value, keywords])
 
   // Hide if no match

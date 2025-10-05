@@ -1,18 +1,8 @@
-export default defineBackground(() => {
-  console.log('Background script initialized')
+// src/entrypoints/background.ts
 
-  // Listen for keyboard command
-  browser.commands.onCommand.addListener(command => {
-    if (command === 'toggle-command-palette') {
-      // Send message to active tab to toggle palette
-      browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-        const activeTab = tabs[0]
-        if (activeTab?.id) {
-          browser.tabs.sendMessage(activeTab.id, {
-            action: 'toggle-command-palette',
-          })
-        }
-      })
-    }
-  })
+export default defineBackground(() => {
+  console.log('Background script initialized', { id: browser.runtime.id })
+
+  // You can keep this for other extension functionality
+  // but it's no longer needed for Ctrl+K
 })

@@ -46,8 +46,8 @@ export default defineConfig({
       commands: {
         'toggle-palette': {
           suggested_key: {
-            default: 'Ctrl+M',
-            mac: 'Command+M',
+            default: 'Ctrl+K',
+            mac: 'Command+K',
           },
           description: 'Toggle command palette',
         },
