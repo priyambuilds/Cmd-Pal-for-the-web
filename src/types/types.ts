@@ -7,7 +7,7 @@ export type CommandFilter = (
 export interface CommandState {
   open: boolean
   search: string
-  activeId: string | null // current aria-activedescendant
+  activeId: string | null | undefined // current aria-activedescendant
   loop: boolean
 }
 
