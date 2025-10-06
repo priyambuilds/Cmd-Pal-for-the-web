@@ -105,11 +105,25 @@ export function parsePrefix(query: string): {
   mapping: PrefixMapping | null
   isInternal: boolean
   portalId?: string
+  shouldNavigate: boolean // NEW: Should we navigate immediately?
 } {
   const trimmed = query.trim()
 
-  // Check external prefixes
+  // Check external prefixes (e.g., !g, !yt)
   for (const mapping of prefixMappings) {
+    // Check if query is EXACTLY the prefix (user just typed it)
+    if (trimmed === mapping.prefix) {
+      return {
+        hasPrefix: true,
+        prefix: mapping.prefix,
+        searchTerm: '',
+        mapping,
+        isInternal: false,
+        shouldNavigate: false, // Don't navigate yet, wait for space
+      }
+    }
+
+    // Check if query starts with prefix + space
     if (trimmed.startsWith(mapping.prefix + ' ')) {
       return {
         hasPrefix: true,
@@ -117,20 +131,37 @@ export function parsePrefix(query: string): {
         searchTerm: trimmed.slice(mapping.prefix.length + 1).trim(),
         mapping,
         isInternal: false,
+        shouldNavigate: true, // Navigate to external search
       }
     }
   }
 
-  // Check internal prefixes
+  // Check internal prefixes (e.g., *, #)
   for (const internal of internalPrefixes) {
-    if (trimmed.startsWith(internal.prefix)) {
+    // Check if query is EXACTLY the prefix
+    if (trimmed === internal.prefix) {
       return {
         hasPrefix: true,
         prefix: internal.prefix,
-        searchTerm: trimmed.slice(internal.prefix.length).trim(),
+        searchTerm: '',
         mapping: null,
         isInternal: true,
         portalId: internal.portalId,
+        shouldNavigate: false, // Don't navigate yet
+      }
+    }
+
+    // Check if query starts with prefix (with or without space)
+    if (trimmed.startsWith(internal.prefix)) {
+      const afterPrefix = trimmed.slice(internal.prefix.length).trim()
+      return {
+        hasPrefix: true,
+        prefix: internal.prefix,
+        searchTerm: afterPrefix,
+        mapping: null,
+        isInternal: true,
+        portalId: internal.portalId,
+        shouldNavigate: true, // Navigate immediately to portal
       }
     }
   }
@@ -141,5 +172,6 @@ export function parsePrefix(query: string): {
     searchTerm: trimmed,
     mapping: null,
     isInternal: false,
+    shouldNavigate: false,
   }
 }

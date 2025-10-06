@@ -89,75 +89,115 @@ function CommandContent({ onClose }: { onClose: () => void }) {
 
   // ROOT VIEW: Show all commands with search
   if (view.type === 'root') {
-    const { hasPrefix, prefix, searchTerm, mapping, isInternal, portalId } =
-      parsePrefix(view.query)
+    const {
+      hasPrefix,
+      prefix,
+      searchTerm,
+      mapping,
+      isInternal,
+      portalId,
+      shouldNavigate,
+    } = parsePrefix(view.query)
 
-    // If internal prefix, navigate to that portal immediately
-    if (hasPrefix && isInternal && portalId && searchTerm.length > 0) {
-      // Navigate immediately (no useEffect!)
+    // ===== INTERNAL PREFIXES (*, #) =====
+    // Navigate immediately when prefix is typed (even without space)
+    if (hasPrefix && isInternal && portalId && shouldNavigate) {
+      // Navigate to portal with empty query
       store.navigate({
         type: 'portal',
         portalId,
-        query: searchTerm,
+        query: '', // ✅ Empty query - user will search inside portal
       })
-      // Return loading state while navigating
-      return (
-        <div className="p-8 text-center text-gray-500">
-          <div className="mb-4 text-4xl animate-spin">⏳</div>
-          <p>
-            Opening {portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'}
-            ...
-          </p>
-        </div>
-      )
+      return null // Will re-render as portal view
     }
 
-    // If external prefix with search term, show "Search X" action
-    if (hasPrefix && mapping && searchTerm.length > 0) {
-      const searchUrl = mapping.urlTemplate.replace(
-        '{query}',
-        encodeURIComponent(searchTerm)
-      )
-
+    // ===== EXTERNAL PREFIXES (!g, !yt, etc.) =====
+    // Show hint when prefix is detected but no space yet
+    if (hasPrefix && !isInternal && mapping && !shouldNavigate) {
       return (
         <>
           <CommandInput placeholder="Search commands..." autofocus />
-          <CommandList>
-            <CommandItem
-              key="prefix-search"
-              value="prefix-search"
-              keywords={[searchTerm]}
-              onSelect={async () => {
-                try {
-                  await chrome.runtime.sendMessage({
-                    type: 'OPEN_BOOKMARK',
-                    url: searchUrl,
-                  })
-                } catch (error) {
-                  console.error('Failed to open URL:', error)
-                }
-                onClose()
-              }}
-            >
-              <span className="text-2xl">{mapping.icon}</span>
-              <div className="flex-1">
-                <div className="font-medium">
-                  {mapping.name}: "{searchTerm}"
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Press Enter to search
-                </div>
-              </div>
-              <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-800">
-                ↵
-              </kbd>
-            </CommandItem>
-          </CommandList>
-
+          <div className="p-8 text-center text-gray-500">
+            <span className="block mb-4 text-4xl">{mapping.icon}</span>
+            <p className="text-lg font-medium">{mapping.name}</p>
+            <p className="mt-2 text-sm">
+              Press{' '}
+              <kbd className="px-2 py-1 bg-gray-100 rounded dark:bg-gray-800">
+                Space
+              </kbd>{' '}
+              to search
+            </p>
+          </div>
           <PrefixHint />
         </>
       )
     }
+
+    // Navigate to external search portal when space is pressed
+    if (hasPrefix && !isInternal && mapping && shouldNavigate) {
+      const searchUrl = mapping.urlTemplate.replace(
+        '{query}',
+        encodeURIComponent(searchTerm || 'search')
+      )
+
+      // If there's a search term, show it
+      if (searchTerm) {
+        return (
+          <>
+            <CommandInput placeholder="Search commands..." autofocus />
+            <CommandList>
+              <CommandItem
+                key="prefix-search"
+                value="prefix-search"
+                keywords={[searchTerm]}
+                onSelect={async () => {
+                  try {
+                    await chrome.runtime.sendMessage({
+                      type: 'OPEN_BOOKMARK',
+                      url: searchUrl,
+                    })
+                  } catch (error) {
+                    console.error('Failed to open URL:', error)
+                  }
+                  onClose()
+                }}
+              >
+                <span className="text-2xl">{mapping.icon}</span>
+                <div className="flex-1">
+                  <div className="font-medium">
+                    {mapping.name}: "{searchTerm}"
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Press Enter to search
+                  </div>
+                </div>
+                <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-800">
+                  ↵
+                </kbd>
+              </CommandItem>
+            </CommandList>
+            <PrefixHint />
+          </>
+        )
+      } else {
+        // Just space pressed, show empty search state
+        return (
+          <>
+            <CommandInput placeholder="Search commands..." autofocus />
+            <div className="p-8 text-center text-gray-500">
+              <span className="block mb-4 text-4xl">{mapping.icon}</span>
+              <p className="font-medium">{mapping.name}</p>
+              <p className="mt-2 text-sm text-gray-400">
+                Type your search query
+              </p>
+            </div>
+            <PrefixHint />
+          </>
+        )
+      }
+    }
+
+    // ===== NO PREFIX - NORMAL BEHAVIOR =====
 
     // If no query, show suggestions view
     if (!view.query) {
@@ -173,7 +213,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
             />
             <CategoryList />
           </div>
-
           <PrefixHint />
         </>
       )
@@ -235,7 +274,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
             </div>
           </CommandEmpty>
         </CommandList>
-
         <PrefixHint />
       </>
     )
