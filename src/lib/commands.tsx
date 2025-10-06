@@ -110,7 +110,7 @@ export const categories: Category[] = [
 /**
  * Helper to get command by ID
  */
-export function getCommandbyId(id: string): Command | undefined {
+export function getCommandById(id: string): Command | undefined {
   return allCommands.find(cmd => cmd.id === id)
 }
 /**
