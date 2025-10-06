@@ -9,6 +9,8 @@ import { useCommandContext } from '@/types/context'
 import { allCommands, getCommandById, getCategoryById } from '@/lib/commands'
 import { type Command as CommandType } from '@/types/types'
 import commandScore from 'command-score'
+import CategoryList from '@/components/CategoryList'
+import RecentCommands from '@/components/RecentCommands'
 
 export default function App() {
   const [open, setOpen] = useState(false)
@@ -86,6 +88,22 @@ function CommandContent({ onClose }: { onClose: () => void }) {
   // ROOT VIEW: Show all commands with search
   if (view.type === 'root') {
     // filter commands by query
+    if (!view.query) {
+      return (
+        <>
+          <CommandInput placeholder="Search commands..." autofocus />
+          <div className="max-h-[400px] overflow-y-auto py-2">
+            <RecentCommands
+              onSelect={id => {
+                const cmd = getCommandById(id)
+                if (cmd) handleCommandSelect(cmd)
+              }}
+            />
+            <CategoryList />
+          </div>
+        </>
+      )
+    }
     const filteredCommands = view.query
       ? allCommands
           .map(cmd => ({
