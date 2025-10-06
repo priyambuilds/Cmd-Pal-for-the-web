@@ -1,10 +1,39 @@
 import type { CommandState, ViewState } from './types'
 
 /**
+ * Storage key for recent commands
+ */
+const STORAGE_KEY = 'commandPalette_recent'
+
+/**
  * A subscription callback that React components pass to listen for changes.
  * When called, it tells React to re-render the component.
  */
 type Subscriber = () => void
+
+/**
+ * Load recent commands from chrome.storage.local
+ */
+async function loadRecentCommands(): Promise<string[]> {
+  try {
+    const result = await browser.storage.local.get(STORAGE_KEY)
+    return result[STORAGE_KEY] || []
+  } catch (error) {
+    console.error('Failed to load recent commands from storage', error)
+    return []
+  }
+}
+
+/**
+ * Save recent commands to chrome.storage.local
+ */
+async function saveRecentCommands(commands: string[]): Promise<void> {
+  try {
+    await browser.storage.local.set({ [STORAGE_KEY]: commands })
+  } catch (error) {
+    console.error('Failed to save recent commands to storage', error)
+  }
+}
 
 /**
  * Creates a simple store that holds CommandState and notifies subscribers
@@ -66,7 +95,6 @@ export function createStore(initialState: CommandState) {
     setState,
     subscribe,
 
-    // Navigation helpers
     navigate: (newView: ViewState) => {
       const currentView = state.view
       setState({
@@ -78,7 +106,7 @@ export function createStore(initialState: CommandState) {
     goBack: () => {
       const history = state.history
       if (history.length > 0) {
-        const previousView = history[history.length - 1]! // ✅ Add the ! operator
+        const previousView = history[history.length - 1]!
         setState({
           view: previousView,
           history: history.slice(0, -1),
@@ -88,15 +116,21 @@ export function createStore(initialState: CommandState) {
 
     addRecentCommand: (commandId: string) => {
       const recent = state.recentCommands.filter(id => id !== commandId)
+      const newRecent = [commandId, ...recent].slice(0, 10)
+
       setState({
-        recentCommands: [commandId, ...recent].slice(0, 10), // keep last 10
+        recentCommands: newRecent,
       })
+
+      saveRecentCommands(newRecent)
+    },
+
+    // ✅ NEW: Initialize from storage
+    init: async () => {
+      const recentCommands = await loadRecentCommands()
+      setState({ recentCommands })
     },
   }
 }
 
-/**
- * Type representing a store instance.
- * We'll use this for TypeScript typing in Context.
- */
 export type CommandStore = ReturnType<typeof createStore>

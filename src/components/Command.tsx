@@ -3,45 +3,6 @@ import { CommandContext } from '@/types/context'
 import { createStore } from '@/types/store'
 import type { CommandProps, CommandState } from '@/types/types'
 
-/**
-┌─────────────────────────────────────┐
-│         <Command>                   │
-│                                     │
-│  1. Creates store (useRef)          │
-│  2. Syncs controlled value          │
-│  3. Provides store via Context      │
-└─────────────┬───────────────────────┘
-              │
-              │ CommandContext
-              ▼
-┌─────────────────────────────────────┐
-│         Child Components            │
-│                                     │
-│  <CommandInput />                   │
-│  useCommandContext() → get store    │
-│                                     │
-│  <CommandList>                      │
-│    <CommandItem />                  │
-│    <CommandItem />                  │
-│  </CommandList>                     │
-│                                     │
-│  All read/write through the store   │
-└─────────────────────────────────────┘
- */
-
-/**
- * Root command component that creates and manages the command palette state.
- * All other command components (Input, List, Item, etc.) must be children of this.
- *
- * Supports both controlled and uncontrolled modes:
- *
- * Uncontrolled:
- *   <Command label="Search">...</Command>
- *
- * Controlled:
- *   <Command label="Search" value={search} onValueChange={setSearch}>...</Command>
- */
-
 export default function Command({
   label,
   value,
@@ -68,6 +29,8 @@ export default function Command({
     }
 
     storeRef.current = createStore(initialState)
+    // Load recent commands from storage
+    storeRef.current.init()
   }
 
   const store = storeRef.current
