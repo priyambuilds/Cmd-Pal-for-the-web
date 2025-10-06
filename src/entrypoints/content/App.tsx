@@ -1,12 +1,13 @@
 import { useState, useEffect, useSyncExternalStore } from 'react'
-import Command from '@/components/Command'
 import CommandInput from '@/components/CommandInput'
+import Command from '@/components/Command'
 import CommandList from '@/components/CommandList'
 import CommandItem from '@/components/CommandItem'
 import CommandEmpty from '@/components/CommandEmpty'
 import BackButton from '@/components/Backbutton'
 import { useCommandContext } from '@/types/context'
 import { allCommands, getCommandById, getCategoryById } from '@/lib/commands'
+import { type Command as CommandType } from '@/types/types'
 import commandScore from 'command-score'
 
 export default function App() {
@@ -39,23 +40,6 @@ export default function App() {
     }
   }, [open])
 
-  const handleSelect = (value: string) => {
-    console.log('Selected:', value)
-    setOpen(false)
-
-    // Handle different commands
-    switch (value) {
-      case 'open-settings':
-        browser.runtime.openOptionsPage()
-        break
-      case 'new-tab':
-        browser.tabs.create({})
-        break
-      default:
-        alert(`Executed: ${value}`)
-    }
-  }
-
   if (!open) return null
 
   return (
@@ -65,14 +49,14 @@ export default function App() {
     >
       <div onClick={e => e.stopPropagation()}>
         <Command label="Global Command Menu">
-          <CommandContext onClose={() => setOpen(false)} />
+          <CommandContent onClose={() => setOpen(false)} />
         </Command>
       </div>
     </div>
   )
 }
 
-function CommandContext({ onClose }: { onClose: () => void }) {
+function CommandContent({ onClose }: { onClose: () => void }) {
   const store = useCommandContext()
 
   // subscribe to current view
@@ -82,7 +66,7 @@ function CommandContext({ onClose }: { onClose: () => void }) {
   )
 
   // Handle command selection
-  const handleCommandSelect = (command: Command) => {
+  const handleCommandSelect = (command: CommandType) => {
     if (command.type === 'action') {
       // Execute action immediately and close
       command.onExecute()
