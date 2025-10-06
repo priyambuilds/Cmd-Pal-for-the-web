@@ -84,10 +84,12 @@ export const portalCommands: Command[] = [
     renderContent: (query, context) => (
       <BookmarksPortal
         query={query}
-        onSelect={url => {
-          // Open bookmark in current tab
-          ;(browser as any).tabs.update({ url })
-          // Close palette
+        onSelect={async url => {
+          // Send message to background to open URL
+          await chrome.runtime.sendMessage({
+            type: 'OPEN_BOOKMARK',
+            url,
+          })
           context.onClose()
         }}
       />

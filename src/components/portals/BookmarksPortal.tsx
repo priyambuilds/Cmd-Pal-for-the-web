@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { browser } from 'wxt/browser'
 import CommandItem from '@/components/CommandItem'
 import commandScore from 'command-score'
 
@@ -11,11 +10,10 @@ export interface BookmarksPortalProps {
 interface Bookmark {
   id: string
   title: string
-  url?: string
-  dateAdded?: number
+  url: string
+  dateAdded: number | undefined
 }
 
-// Define the bookmark node type locally
 interface BookmarkTreeNode {
   id: string
   title: string
@@ -39,13 +37,19 @@ export default function BookmarksPortal({
   async function loadBookmarks() {
     try {
       setLoading(true)
-      // Type assertion for the API call
-      const tree = (await (
-        browser as any
-      ).bookmarks.getTree()) as BookmarkTreeNode[]
-      const flatBookmarks = flattenBookmarks(tree)
-      setBookmarks(flatBookmarks)
-      setError(null)
+
+      // Send message to background script to get bookmarks
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_BOOKMARKS',
+      })
+
+      if (response.success) {
+        const flatBookmarks = flattenBookmarks(response.data)
+        setBookmarks(flatBookmarks)
+        setError(null)
+      } else {
+        throw new Error(response.error)
+      }
     } catch (err) {
       console.error('Failed to load bookmarks:', err)
       setError('Failed to load bookmarks. Please check permissions.')
@@ -63,7 +67,7 @@ export default function BookmarksPortal({
           id: node.id,
           title: node.title,
           url: node.url,
-          ...(node.dateAdded && { dateAdded: node.dateAdded }), // Only add if exists
+          dateAdded: node.dateAdded,
         })
       }
 
