@@ -6,7 +6,6 @@ export type CommandFilter = (
 
 export interface CommandState {
   open: boolean
-  search: string
   activeId: string | null | undefined
   loop: boolean
   view: ViewState
@@ -33,9 +32,10 @@ export interface CommandItemProps {
   children?: React.ReactNode
 }
 
-// NEW: View State for Navigation
+// View State for Navigation
 
 export type ViewType = 'root' | 'portal' | 'category'
+
 export interface ViewState {
   type: ViewType
   portalId?: string // Set when type = 'portal'
@@ -43,7 +43,7 @@ export interface ViewState {
   query: string // Current search query in this view
 }
 
-// NEW: Command Types (Action vs Portal)
+// Command Types (Action vs Portal)
 
 export interface BaseCommand {
   id: string
@@ -70,7 +70,7 @@ export interface PortalCommand extends BaseCommand {
 
 export type Command = ActionCommand | PortalCommand
 
-// NEW: Category Definition
+// Category Definition
 
 export interface Category {
   id: string

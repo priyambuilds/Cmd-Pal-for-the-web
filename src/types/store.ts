@@ -1,4 +1,4 @@
-import type { CommandState } from './types'
+import type { CommandState, ViewState } from './types'
 
 /**
  * A subscription callback that React components pass to listen for changes.
@@ -65,6 +65,33 @@ export function createStore(initialState: CommandState) {
     getSlice,
     setState,
     subscribe,
+
+    // Navigation helpers
+    navigate: (newView: ViewState) => {
+      const currentView = state.view
+      setState({
+        view: newView,
+        history: [...state.history, currentView],
+      })
+    },
+
+    goBack: () => {
+      const history = state.history
+      if (history.length > 0) {
+        const previousView = history[history.length - 1]! // ✅ Add the ! operator
+        setState({
+          view: previousView,
+          history: history.slice(0, -1),
+        })
+      }
+    },
+
+    addRecentCommand: (commandId: string) => {
+      const recent = state.recentCommands.filter(id => id !== commandId)
+      setState({
+        recentCommands: [commandId, ...recent].slice(0, 10), // keep last 10
+      })
+    },
   }
 }
 

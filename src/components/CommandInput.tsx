@@ -38,9 +38,9 @@ export default function CommandInput({
   const listboxId = `${inputId}-listbox`
 
   // Subscribe to search value from store
-  const search = useSyncExternalStore(
+  const query = useSyncExternalStore(
     store.subscribe,
-    () => store.getState().search
+    () => store.getState().view.query
   )
   // Subscribe to open state to set aria-expanded
   const open = useSyncExternalStore(
@@ -55,9 +55,15 @@ export default function CommandInput({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
+    const currentView = store.getState().view
+
+    // Single setState call - more efficient
     store.setState({
-      search: newValue,
-      open: newValue.length > 0, // Open list when typing
+      view: {
+        ...currentView,
+        query: newValue,
+      },
+      open: newValue.length > 0,
     })
   }
 
@@ -92,7 +98,7 @@ export default function CommandInput({
         autoCorrect="off"
         spellCheck={false}
         autoFocus={autofocus}
-        value={search}
+        value={query}
         onChange={handleChange}
         placeholder={placeholder}
         className={`

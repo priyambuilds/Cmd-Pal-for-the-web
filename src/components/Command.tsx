@@ -57,11 +57,14 @@ export default function Command({
   if (!storeRef.current) {
     const initialState: CommandState = {
       open: false,
-      search: value ?? '',
       activeId: null,
       loop,
-      currentView: 'root', // Start at root
-      activeGroupId: null,
+      view: {
+        type: 'root',
+        query: value ?? '',
+      },
+      history: [],
+      recentCommands: [],
     }
 
     storeRef.current = createStore(initialState)
@@ -71,7 +74,13 @@ export default function Command({
 
   useEffect(() => {
     if (value !== undefined) {
-      store.setState({ search: value })
+      const currentView = store.getState().view
+      store.setState({
+        view: {
+          ...currentView,
+          query: value, // ✅ Update view.query instead
+        },
+      })
     }
   }, [value, store])
 

@@ -125,10 +125,19 @@ export default function CommandList({
         case 'Escape': {
           e.preventDefault()
 
-          // If there's a search, clear it
+          // If there's a query, clear it
           // Otherwise, close the palette (handled by parent)
-          if (state.search) {
-            store.setState({ search: '', open: false, activeId: null })
+          const currentView = state.view
+          if (currentView.query) {
+            // ✅ Use view.query instead
+            store.setState({
+              view: {
+                ...currentView,
+                query: '',
+              },
+              open: false,
+              activeId: null,
+            })
           }
           break
         }

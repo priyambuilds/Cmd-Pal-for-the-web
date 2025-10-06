@@ -32,10 +32,10 @@ export default function CommandItem({
   const generatedId = useId()
   const id = providedId || generatedId
 
-  // Subscribe to search text for filtering
-  const search = useSyncExternalStore(
+  // Subscribe to query text for filtering
+  const query = useSyncExternalStore(
     store.subscribe,
-    () => store.getState().search
+    () => store.getState().view.query
   )
 
   // Subscribe to activeId to know if this item is selected
@@ -49,19 +49,19 @@ export default function CommandItem({
   // Calculate match score
   // For now, simple contains check - we'll add command-score later
   const score = useMemo(() => {
-    if (!search) return 1
+    if (!query) return 1
 
     // Score the main value using command-score
-    let maxScore = commandScore(value, search)
+    let maxScore = commandScore(value, query)
 
     // Also check keywords and take the best score
     keywords.forEach(kw => {
-      const keywordScore = commandScore(kw, search)
+      const keywordScore = commandScore(kw, query)
       maxScore = Math.max(maxScore, keywordScore)
     })
 
     return maxScore
-  }, [search, value, keywords])
+  }, [query, value, keywords])
 
   // Hide if no match
   if (score === 0) return null

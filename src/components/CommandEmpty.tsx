@@ -12,9 +12,9 @@ export default function CommandEmpty({
 }: CommandEmptyProps) {
   const store = useCommandContext()
   // Subscribe to seach to know if user is searching
-  const search = useSyncExternalStore(
+  const query = useSyncExternalStore(
     store.subscribe,
-    () => store.getState().search
+    () => store.getState().view.query
   )
 
   // Count visible items by querying the DOM
@@ -24,7 +24,7 @@ export default function CommandEmpty({
     document.querySelectorAll('[data-command-item]').length > 0
 
   // Only show when there's a search but no results
-  if (!search || hasItems) return null
+  if (!query || hasItems) return null
 
   return (
     <div
