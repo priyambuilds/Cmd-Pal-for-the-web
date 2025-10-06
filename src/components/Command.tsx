@@ -60,6 +60,8 @@ export default function Command({
       search: value ?? '',
       activeId: null,
       loop,
+      currentView: 'root', // Start at root
+      activeGroupId: null,
     }
 
     storeRef.current = createStore(initialState)

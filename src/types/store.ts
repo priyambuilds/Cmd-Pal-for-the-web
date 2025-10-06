@@ -1,37 +1,4 @@
 import type { CommandState } from './types'
-/**
-┌─────────────────────┐
-│   React Component   │
-│                     │
-│  useSyncExternal    │
-│  Store(...)         │
-└──────────┬──────────┘
-           │
-           │ subscribe(callback)
-           ▼
-┌─────────────────────┐
-│   Command Store     │
-│                     │
-│  state: {           │
-│    search: ''       │
-│    open: false      │
-│    activeId: null   │
-│  }                  │
-│                     │
-│  subscribers: Set   │
-└──────────┬──────────┘
-           │
-           │ setState({ search: 'new' })
-           ▼
-     Notify all subscribers
-           │
-           │ callback()
-           ▼
-┌─────────────────────┐
-│   React Component   │
-│   (re-renders)      │
-└─────────────────────┘
- */
 
 /**
  * A subscription callback that React components pass to listen for changes.
