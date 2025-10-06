@@ -29,7 +29,7 @@ export default function RecentCommands({ onSelect }: RecentCommandsProps) {
   return (
     <div className="border-b border-gray-200 dark:border-gray-800">
       <div className="px-4 pt-3 pb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-        Recently used
+        ⌚ Recently used
       </div>
       {recentCommands.map(cmd => (
         <CommandItem
