@@ -11,6 +11,8 @@ import { type Command as CommandType } from '@/types/types'
 import commandScore from 'command-score'
 import CategoryList from '@/components/CategoryList'
 import RecentCommands from '@/components/RecentCommands'
+import { parsePrefix } from '@/lib/prefixes'
+import PrefixHint from '@/components/PrefixHint'
 
 export default function App() {
   const [open, setOpen] = useState(false)
@@ -87,7 +89,77 @@ function CommandContent({ onClose }: { onClose: () => void }) {
 
   // ROOT VIEW: Show all commands with search
   if (view.type === 'root') {
-    // filter commands by query
+    const { hasPrefix, prefix, searchTerm, mapping, isInternal, portalId } =
+      parsePrefix(view.query)
+
+    // If internal prefix, navigate to that portal immediately
+    if (hasPrefix && isInternal && portalId && searchTerm.length > 0) {
+      // Navigate immediately (no useEffect!)
+      store.navigate({
+        type: 'portal',
+        portalId,
+        query: searchTerm,
+      })
+      // Return loading state while navigating
+      return (
+        <div className="p-8 text-center text-gray-500">
+          <div className="mb-4 text-4xl animate-spin">⏳</div>
+          <p>
+            Opening {portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'}
+            ...
+          </p>
+        </div>
+      )
+    }
+
+    // If external prefix with search term, show "Search X" action
+    if (hasPrefix && mapping && searchTerm.length > 0) {
+      const searchUrl = mapping.urlTemplate.replace(
+        '{query}',
+        encodeURIComponent(searchTerm)
+      )
+
+      return (
+        <>
+          <CommandInput placeholder="Search commands..." autofocus />
+          <CommandList>
+            <CommandItem
+              key="prefix-search"
+              value="prefix-search"
+              keywords={[searchTerm]}
+              onSelect={async () => {
+                try {
+                  await chrome.runtime.sendMessage({
+                    type: 'OPEN_BOOKMARK',
+                    url: searchUrl,
+                  })
+                } catch (error) {
+                  console.error('Failed to open URL:', error)
+                }
+                onClose()
+              }}
+            >
+              <span className="text-2xl">{mapping.icon}</span>
+              <div className="flex-1">
+                <div className="font-medium">
+                  {mapping.name}: "{searchTerm}"
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Press Enter to search
+                </div>
+              </div>
+              <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-800">
+                ↵
+              </kbd>
+            </CommandItem>
+          </CommandList>
+
+          <PrefixHint />
+        </>
+      )
+    }
+
+    // If no query, show suggestions view
     if (!view.query) {
       return (
         <>
@@ -101,22 +173,24 @@ function CommandContent({ onClose }: { onClose: () => void }) {
             />
             <CategoryList />
           </div>
+
+          <PrefixHint />
         </>
       )
     }
-    const filteredCommands = view.query
-      ? allCommands
-          .map(cmd => ({
-            command: cmd,
-            score: Math.max(
-              commandScore(cmd.name, view.query),
-              ...cmd.keywords.map(kw => commandScore(kw, view.query))
-            ),
-          }))
-          .filter(item => item.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .map(item => item.command)
-      : allCommands
+
+    // If query exists but no prefix, show filtered commands
+    const filteredCommands = allCommands
+      .map(cmd => ({
+        command: cmd,
+        score: Math.max(
+          commandScore(cmd.name, view.query),
+          ...cmd.keywords.map(kw => commandScore(kw, view.query))
+        ),
+      }))
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.command)
 
     return (
       <>
@@ -136,7 +210,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
                   {cmd.description}
                 </div>
               </div>
-              {/* Show arrow for portals */}
               {cmd.type === 'portal' && (
                 <svg
                   className="w-4 h-4 text-gray-400"
@@ -158,10 +231,12 @@ function CommandContent({ onClose }: { onClose: () => void }) {
           <CommandEmpty>
             <div className="space-y-2">
               <p className="font-medium">No results found</p>
-              <p className="text-xs">Try searching for something else</p>
+              <p className="text-xs">Try using a prefix like !g, !p, or !yt</p>
             </div>
           </CommandEmpty>
         </CommandList>
+
+        <PrefixHint />
       </>
     )
   }
