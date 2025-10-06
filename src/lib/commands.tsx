@@ -1,6 +1,7 @@
 import type { Command, Category } from '@/types/types'
 import { browser } from 'wxt/browser'
 import BookmarksPortal from '@/components/portals/BookmarksPortal'
+import HistoryPortal from '@/components/portals/HistoryPortal'
 /**
  * Example action commands that execute immediately
  */
@@ -70,7 +71,7 @@ export const portalCommands: Command[] = [
     ),
   },
 
-  // NEW: Bookmarks Portal
+  // Bookmarks Portal
   {
     type: 'portal',
     id: 'search-bookmarks',
@@ -88,6 +89,30 @@ export const portalCommands: Command[] = [
           // Send message to background to open URL
           await chrome.runtime.sendMessage({
             type: 'OPEN_BOOKMARK',
+            url,
+          })
+          context.onClose()
+        }}
+      />
+    ),
+  },
+  // historu Portal
+  {
+    type: 'portal',
+    id: 'search-history',
+    name: 'Search History',
+    description: 'Browse and search your browsing history',
+    icon: '🕒',
+    keywords: ['history', 'visited', 'browsing', 'pages', 'recent'],
+    category: 'search',
+    source: 'Built-in',
+    searchPlaceholder: 'Search history...',
+    renderContent: (query, context) => (
+      <HistoryPortal
+        query={query}
+        onSelect={async url => {
+          await chrome.runtime.sendMessage({
+            type: 'OPEN_HISTORY',
             url,
           })
           context.onClose()
