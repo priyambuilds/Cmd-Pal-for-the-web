@@ -1,3 +1,5 @@
+import type { CommandStore } from './store'
+
 export type CommandFilter = (
   value: string,
   search: string,
@@ -65,7 +67,12 @@ export interface ActionCommand extends BaseCommand {
 export interface PortalCommand extends BaseCommand {
   type: 'portal'
   searchPlaceholder?: string
-  renderContent: (query: string) => React.ReactNode
+  renderContent: (query: string, context: PortalContext) => React.ReactNode
+}
+
+export interface PortalContext {
+  onClose: () => void
+  store: CommandStore
 }
 
 export type Command = ActionCommand | PortalCommand

@@ -1,5 +1,6 @@
 import type { Command, Category } from '@/types/types'
-
+import { browser } from 'wxt/browser'
+import BookmarksPortal from '@/components/portals/BookmarksPortal'
 /**
  * Example action commands that execute immediately
  */
@@ -59,13 +60,37 @@ export const portalCommands: Command[] = [
     category: 'search',
     source: 'Built-in',
     searchPlaceholder: 'Search Google...',
-    renderContent: query => (
+    renderContent: (query, context) => (
       <div className="p-8 text-center text-gray-500">
         <p className="mb-2 text-xl">🔍</p>
         <p>Google Search Portal</p>
         <p className="mt-2 text-sm">Query: "{query}"</p>
         <p className="mt-4 text-xs">Full implementation coming soon!</p>
       </div>
+    ),
+  },
+
+  // NEW: Bookmarks Portal
+  {
+    type: 'portal',
+    id: 'search-bookmarks',
+    name: 'Search Bookmarks',
+    description: 'Browse and search your bookmarks',
+    icon: '🔖',
+    keywords: ['bookmarks', 'favorites', 'saved', 'starred', 'bookmark'],
+    category: 'search',
+    source: 'Built-in',
+    searchPlaceholder: 'Search bookmarks...',
+    renderContent: (query, context) => (
+      <BookmarksPortal
+        query={query}
+        onSelect={url => {
+          // Open bookmark in current tab
+          ;(browser as any).tabs.update({ url })
+          // Close palette
+          context.onClose()
+        }}
+      />
     ),
   },
 ]

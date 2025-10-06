@@ -4,7 +4,7 @@ import Command from '@/components/Command'
 import CommandList from '@/components/CommandList'
 import CommandItem from '@/components/CommandItem'
 import CommandEmpty from '@/components/CommandEmpty'
-import BackButton from '@/components/Backbutton'
+import BackButton from '@/components/BackButton'
 import { useCommandContext } from '@/types/context'
 import { allCommands, getCommandById, getCategoryById } from '@/lib/commands'
 import { type Command as CommandType } from '@/types/types'
@@ -180,7 +180,9 @@ function CommandContent({ onClose }: { onClose: () => void }) {
           placeholder={portal.searchPlaceholder || 'Search...'}
           autofocus
         />
-        <div className="min-h-[200px]">{portal.renderContent(view.query)}</div>
+        <div className="min-h-[200px]">
+          {portal.renderContent(view.query, { onClose, store })}
+        </div>
       </>
     )
   }

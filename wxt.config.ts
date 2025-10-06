@@ -16,7 +16,7 @@ export default defineConfig({
       description: 'Command Pallete for the web',
       version: '1.0.0',
 
-      permissions: ['tabs', 'storage', 'bookmarks', 'history'],
+      permissions: ['tabs', 'storage', 'bookmarks', 'history', 'activeTab'],
       host_permissions: ['<all_urls>'],
 
       action: {
