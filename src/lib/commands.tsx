@@ -1,7 +1,7 @@
-import type { Command, Category } from '@/types/types'
-import { browser } from 'wxt/browser'
+import type { Command, Category, PortalContext } from '@/types/types'
 import BookmarksPortal from '@/components/portals/BookmarksPortal'
 import HistoryPortal from '@/components/portals/HistoryPortal'
+import { prefixMappings } from '@/lib/prefixes'
 /**
  * Example action commands that execute immediately
  */
@@ -16,7 +16,7 @@ export const actionCommands: Command[] = [
     category: 'navigation',
     source: 'Built-in',
     onExecute: async () => {
-      await browser.runtime.openOptionsPage()
+      await chrome.runtime.openOptionsPage()
     },
   },
   {
@@ -29,7 +29,7 @@ export const actionCommands: Command[] = [
     category: 'navigation',
     source: 'Built-in',
     onExecute: async () => {
-      await browser.tabs.create({})
+      await chrome.tabs.create({})
     },
   },
   {
@@ -51,26 +51,6 @@ export const actionCommands: Command[] = [
  * Example portal commands that open new interfaces
  */
 export const portalCommands: Command[] = [
-  {
-    type: 'portal',
-    id: 'search-google',
-    name: 'Google Search',
-    description: 'Search the web with Google',
-    icon: '🔍',
-    keywords: ['google', 'web', 'internet', 'find', 'query'],
-    category: 'search',
-    source: 'Built-in',
-    searchPlaceholder: 'Search Google...',
-    renderContent: (query, context) => (
-      <div className="p-8 text-center text-gray-500">
-        <p className="mb-2 text-xl">🔍</p>
-        <p>Google Search Portal</p>
-        <p className="mt-2 text-sm">Query: "{query}"</p>
-        <p className="mt-4 text-xs">Full implementation coming soon!</p>
-      </div>
-    ),
-  },
-
   // Bookmarks Portal
   {
     type: 'portal',
@@ -82,7 +62,7 @@ export const portalCommands: Command[] = [
     category: 'search',
     source: 'Built-in',
     searchPlaceholder: 'Search bookmarks...',
-    renderContent: (query, context) => (
+    renderContent: (query: string, context: PortalContext) => (
       <BookmarksPortal
         query={query}
         onSelect={async url => {
@@ -96,7 +76,7 @@ export const portalCommands: Command[] = [
       />
     ),
   },
-  // historu Portal
+  // History Portal
   {
     type: 'portal',
     id: 'search-history',
@@ -107,7 +87,7 @@ export const portalCommands: Command[] = [
     category: 'search',
     source: 'Built-in',
     searchPlaceholder: 'Search history...',
-    renderContent: (query, context) => (
+    renderContent: (query: string, context: PortalContext) => (
       <HistoryPortal
         query={query}
         onSelect={async url => {
@@ -120,6 +100,63 @@ export const portalCommands: Command[] = [
       />
     ),
   },
+
+  // Dynamic prefix portals
+  ...prefixMappings.map(mapping => ({
+    type: 'portal' as const,
+    id: `prefix-${mapping.prefix}`,
+    name: `${mapping.name} Search`,
+    description: mapping.description,
+    icon: mapping.icon,
+    keywords: [mapping.prefix.replace('!', ''), mapping.name.toLowerCase()],
+    category: 'search',
+    source: 'Built-in',
+    searchPlaceholder: `Search ${mapping.name}...`,
+    renderContent: (query: string, context: PortalContext) => {
+      if (!query) {
+        return (
+          <div className="p-8 text-center text-gray-500">
+            <span className="block mb-4 text-4xl">{mapping.icon}</span>
+            <p className="text-lg font-medium">{mapping.name}</p>
+            <p className="mt-2 text-sm">Type your search query</p>
+          </div>
+        )
+      }
+      const searchUrl = mapping.urlTemplate.replace(
+        '{query}',
+        encodeURIComponent(query)
+      )
+      return (
+        <>
+          <div className="p-4">
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Ready to search {mapping.name} for "{query}"
+              </p>
+            </div>
+          </div>
+          <div className="px-4 pb-4">
+            <button
+              onClick={async () => {
+                try {
+                  await chrome.runtime.sendMessage({
+                    type: 'OPEN_BOOKMARK', // Reuse for general URL opening
+                    url: searchUrl,
+                  })
+                } catch (error) {
+                  console.error('Failed to open URL:', error)
+                }
+                context.onClose()
+              }}
+              className="w-full px-4 py-2 font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600"
+            >
+              Search {mapping.name}
+            </button>
+          </div>
+        </>
+      )
+    },
+  })),
 ]
 
 /**

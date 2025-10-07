@@ -1,10 +1,11 @@
-import { useState, useEffect, useSyncExternalStore } from 'react'
+import { useState, useEffect, useSyncExternalStore, useMemo } from 'react'
 import CommandInput from '@/components/CommandInput'
 import Command from '@/components/Command'
 import CommandList from '@/components/CommandList'
 import CommandItem from '@/components/CommandItem'
 import CommandEmpty from '@/components/CommandEmpty'
 import BackButton from '@/components/BackButton'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { useCommandContext } from '@/types/context'
 import { allCommands, getCommandById, getCategoryById } from '@/lib/commands'
 import { type Command as CommandType } from '@/types/types'
@@ -48,9 +49,11 @@ export default function App() {
       onClick={() => setOpen(false)}
     >
       <div onClick={e => e.stopPropagation()}>
-        <Command label="Global Command Menu">
-          <CommandContent onClose={() => setOpen(false)} />
-        </Command>
+        <ErrorBoundary>
+          <Command label="Global Command Menu">
+            <CommandContent onClose={() => setOpen(false)} />
+          </Command>
+        </ErrorBoundary>
       </div>
     </div>
   )
@@ -70,7 +73,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
   // ✅ FIXED: Removed 'store' from dependencies
   useEffect(() => {
     if (viewType === 'root') {
-      const { hasPrefix, isInternal, portalId, shouldNavigate } =
+      const { hasPrefix, isInternal, portalId, shouldNavigate, mapping } =
         parsePrefix(viewQuery)
 
       if (hasPrefix && isInternal && portalId && shouldNavigate) {
@@ -80,8 +83,40 @@ function CommandContent({ onClose }: { onClose: () => void }) {
           query: '',
         })
       }
+
+      if (hasPrefix && !isInternal && mapping && shouldNavigate) {
+        const { searchTerm } = parsePrefix(viewQuery)
+        store.navigate({
+          type: 'portal',
+          portalId: `prefix-${mapping.prefix}`,
+          query: searchTerm,
+        })
+      }
     }
   }, [viewType, viewQuery]) // ✅ Only viewType and viewQuery
+
+  // Pre-compute filtered commands (always call useMemo to satisfy React hooks rules)
+  const filteredCommands = useMemo(() => {
+    if (viewType !== 'root' || !viewQuery) return []
+
+    const parsed = parsePrefix(viewQuery)
+    // Only compute for root view with queries that actually need filtering (no prefix, non-empty)
+    if (!parsed.hasPrefix && parsed.searchTerm) {
+      return allCommands
+        .map(cmd => ({
+          command: cmd,
+          score: Math.max(
+            commandScore(cmd.name, parsed.searchTerm),
+            ...cmd.keywords.map(kw => commandScore(kw, parsed.searchTerm))
+          ),
+        }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(item => item.command)
+    }
+
+    return []
+  }, [viewType, viewQuery])
 
   // Handle command selection
   const handleCommandSelect = (command: CommandType) => {
@@ -144,67 +179,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       )
     }
 
-    if (hasPrefix && !isInternal && mapping && shouldNavigate) {
-      const searchUrl = mapping.urlTemplate.replace(
-        '{query}',
-        encodeURIComponent(searchTerm || 'search')
-      )
-
-      if (searchTerm) {
-        return (
-          <>
-            <CommandInput placeholder="Search commands..." autoFocus />
-            <CommandList>
-              <CommandItem
-                key="prefix-search"
-                value="prefix-search"
-                keywords={[searchTerm]}
-                onSelect={async () => {
-                  try {
-                    await chrome.runtime.sendMessage({
-                      type: 'OPEN_BOOKMARK',
-                      url: searchUrl,
-                    })
-                  } catch (error) {
-                    console.error('Failed to open URL:', error)
-                  }
-                  onClose()
-                }}
-              >
-                <span className="text-2xl">{mapping.icon}</span>
-                <div className="flex-1">
-                  <div className="font-medium">
-                    {mapping.name}: "{searchTerm}"
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Press Enter to search
-                  </div>
-                </div>
-                <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-800">
-                  ↵
-                </kbd>
-              </CommandItem>
-            </CommandList>
-            <PrefixHint />
-          </>
-        )
-      } else {
-        return (
-          <>
-            <CommandInput placeholder="Search commands..." autoFocus />
-            <div className="p-8 text-center text-gray-500">
-              <span className="block mb-4 text-4xl">{mapping.icon}</span>
-              <p className="font-medium">{mapping.name}</p>
-              <p className="mt-2 text-sm text-gray-400">
-                Type your search query
-              </p>
-            </div>
-            <PrefixHint />
-          </>
-        )
-      }
-    }
-
     // ----- No Prefix -----
     if (!view.query) {
       return (
@@ -225,18 +199,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
     }
 
     // Query exists - show filtered commands
-    const filteredCommands = allCommands
-      .map(cmd => ({
-        command: cmd,
-        score: Math.max(
-          commandScore(cmd.name, view.query),
-          ...cmd.keywords.map(kw => commandScore(kw, view.query))
-        ),
-      }))
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(item => item.command)
-
     return (
       <>
         <CommandInput placeholder="Search commands..." autoFocus />

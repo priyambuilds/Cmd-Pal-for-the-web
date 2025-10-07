@@ -16,10 +16,10 @@ type Subscriber = () => void
  */
 async function loadRecentCommands(): Promise<string[]> {
   try {
-    const result = await browser.storage.local.get(STORAGE_KEY)
-    return result[STORAGE_KEY] || []
+    const result = await chrome.storage.local.get(STORAGE_KEY)
+    return Array.isArray(result[STORAGE_KEY]) ? result[STORAGE_KEY] : []
   } catch (error) {
-    console.error('Failed to load recent commands from storage', error)
+    console.warn('Failed to load recent commands from storage:', error)
     return []
   }
 }
@@ -29,7 +29,7 @@ async function loadRecentCommands(): Promise<string[]> {
  */
 async function saveRecentCommands(commands: string[]): Promise<void> {
   try {
-    await browser.storage.local.set({ [STORAGE_KEY]: commands })
+    await chrome.storage.local.set({ [STORAGE_KEY]: commands })
   } catch (error) {
     console.error('Failed to save recent commands to storage', error)
   }

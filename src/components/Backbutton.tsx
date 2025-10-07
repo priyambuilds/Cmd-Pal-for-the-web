@@ -1,4 +1,5 @@
 import { useCommandContext } from '@/types/context'
+import { useCallback } from 'react'
 
 /**
  * Back button that appears when navigated into a portal or category.

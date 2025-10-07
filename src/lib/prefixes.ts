@@ -151,14 +151,10 @@ export function parsePrefix(query: string): {
     }
 
     // Check for space after prefix using original query
-    if (
-      original.startsWith(internal.prefix + ' ') ||
-      (original.length > internal.prefix.length &&
-        original.startsWith(internal.prefix))
-    ) {
+    if (original.startsWith(internal.prefix + ' ')) {
       const afterPrefix = original.slice(internal.prefix.length)
 
-      // If there's a space or more characters, navigate
+      // If there's a space and more characters, navigate
       if (afterPrefix.length > 0) {
         return {
           hasPrefix: true,
