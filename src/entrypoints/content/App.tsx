@@ -13,13 +13,15 @@ import CommandEmpty from '@/components/CommandEmpty'
 import BackButton from '@/components/BackButton'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { useCommandContext } from '@/types/context'
-import { allCommands, getCommandById, getCategoryById } from '@/lib/commands'
+import { allCommands, getCommandById } from '@/lib/commands'
 import { type Command as CommandType } from '@/types/types'
 import commandScore from 'command-score'
 import CategoryList from '@/components/CategoryList'
 import RecentCommands from '@/components/RecentCommands'
 import { parsePrefix } from '@/lib/prefixes'
 import PrefixHint from '@/components/PrefixHint'
+import BookmarksPortal from '@/components/portals/BookmarksPortal'
+import HistoryPortal from '@/components/portals/HistoryPortal'
 
 /**
  * Minimum score threshold for fuzzy search results
@@ -28,54 +30,77 @@ import PrefixHint from '@/components/PrefixHint'
 const MIN_SCORE_THRESHOLD = 0.1
 
 /**
- * Maximum number of results to show before "Show more"
- * Keeps UI snappy by virtualizing long lists
+ * Maximum number of results to show
+ * Keeps UI snappy by limiting DOM nodes
  */
-const MAX_INITIAL_RESULTS = 100
+const MAX_INITIAL_RESULTS = 50
 
+/**
+ * Main App Component - Command Palette Modal
+ *
+ * This component handles:
+ * - Global keyboard shortcuts (Cmd/Ctrl+K)
+ * - Modal open/close state
+ * - Global error boundary
+ */
 export default function App() {
   const [open, setOpen] = useState(false)
 
   // ============================================
   // KEYBOARD SHORTCUTS
   // ============================================
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd+K: Open Command Palette
-      if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
-        console.log('Ctrl/Cmd+K detected!')
+      // Cmd/Ctrl + K: Toggle command palette
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         e.stopPropagation()
         setOpen(prev => !prev)
+
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎹 Command Palette toggled:', !open)
+        }
       }
 
-      // Escape to close when open
+      // Escape: Close palette when open
       if (e.key === 'Escape' && open) {
         e.preventDefault()
         setOpen(false)
       }
     }
+
+    // Use capture phase to catch events before they bubble
     window.addEventListener('keydown', handleKeyDown, { capture: true })
-    console.log('Keyboard listener registered')
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown, {
-        capture: true,
-      })
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
   }, [open])
 
+  // Don't render anything when closed
   if (!open) return null
 
   return (
-    <ErrorBoundary>
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-[20vh] px-4">
+    <ErrorBoundary
+      isolationLevel="global"
+      onError={(error, errorInfo) => {
+        console.error('💥 App-level error:', error)
+        console.error('Component stack:', errorInfo.componentStack)
+      }}
+    >
+      {/* Modal Overlay */}
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center px-4 bg-black/50 backdrop-blur-sm pt-[20vh]"
+        onClick={() => setOpen(false)}
+      >
+        {/* Modal Content */}
         <div
           className="w-full max-w-2xl overflow-hidden bg-white rounded-lg shadow-2xl dark:bg-gray-800"
           onClick={e => e.stopPropagation()}
         >
           <Command label="Command Palette" loop>
-            <AppContent />
+            <AppContent onClose={() => setOpen(false)} />
           </Command>
         </div>
       </div>
@@ -83,11 +108,11 @@ export default function App() {
   )
 }
 
-/**
- * Main content component with performance-optimized filtering
- * Separated from App to keep modal logic clean
- */
-function AppContent() {
+// AppContent Component - Main palette logic
+interface AppContentProps {
+  onClose: () => void
+}
+function AppContent({ onClose }: AppContentProps) {
   const store = useCommandContext()
 
   // ============================================
@@ -132,7 +157,7 @@ function AppContent() {
    * 4. Single-pass filter+sort (combine operations)
    * 5. Limit results (stop processing after MAX_INITIAL_RESULTS)
    */
-  const filteredCOmmands = useMemo(() => {
+  const filteredCommands = useMemo(() => {
     // Early return: no query = show all commands
     if (!deferredQuery || prefixInfo.detected) {
       return allCommands
@@ -203,11 +228,11 @@ function AppContent() {
   )
 
   // ============================================
-  // VIEW RENDERING
+  // EVENT HANDLERS
   // ============================================
 
   /**
-   * Handle command execution
+   * Handle command selection
    */
   const handleCommandSelect = async (commandId: string) => {
     const command = getCommandById(commandId)
@@ -215,11 +240,13 @@ function AppContent() {
 
     try {
       // Add to recent commands
-      await store.addRecentCommand(command.id)
+      await store.addRecentCommand(commandId)
 
-      // Execute command
+      // Execute based on command type
       if (command.type === 'action' && command.onExecute) {
         await command.onExecute()
+        // Close palette after action
+        onClose()
       } else if (command.type === 'category') {
         // Navigate to category view
         const currentView = store.getState().view
@@ -235,7 +262,7 @@ function AppContent() {
         })
       }
     } catch (error) {
-      console.error('Failed executing command:', error)
+      console.error('Failed to execute command:', error)
     }
   }
 
@@ -245,17 +272,32 @@ function AppContent() {
   const handlePrefixSearch = () => {
     if (!prefixInfo.detected || !prefixInfo.query) return
 
-    // Open URL in new tab
     const url = prefixInfo.mapping!.urlTemplate.replace(
       '{query}',
       encodeURIComponent(prefixInfo.query)
     )
 
     chrome.tabs.create({ url })
+    onClose()
   }
 
+  /**
+   * Handle bookmark selection
+   */
+  const handleBookmarkSelect = (url: string) => {
+    chrome.tabs.update({ url })
+    onClose()
+  }
+
+  /**
+   * Handle history selection
+   */
+  const handleHistorySelect = (url: string) => {
+    chrome.tabs.update({ url })
+    onClose()
+  }
   // ============================================
-  // RENDER DIFFERENT VIEWS
+  // RENDER
   // ============================================
 
   return (
@@ -271,10 +313,10 @@ function AppContent() {
 
       {/* Command list */}
       <CommandList>
-        {/* ROOT VIEW: Show all commands and recent commands */}
+        {/* ROOT VIEW */}
         {view.type === 'root' && (
           <>
-            {/* Show recent commands if no query */}
+            {/* Recent commands (only when no query) */}
             {!deferredQuery && recentCommandObjects.length > 0 && (
               <RecentCommands
                 commands={recentCommandObjects}
@@ -291,7 +333,7 @@ function AppContent() {
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{prefixInfo.mapping?.icon}</span>
                   <div className="flex-1">
-                    <div className="font-medium">
+                    <div className="font-medium text-gray-900 dark:text-gray-100">
                       Search "{prefixInfo.query}" on {prefixInfo.mapping?.name}
                     </div>
                   </div>
@@ -302,7 +344,7 @@ function AppContent() {
               </CommandItem>
             )}
 
-            {/* Regular commands */}
+            {/* Regular filtered commands */}
             {!prefixInfo.detected &&
               filteredCommands.map(cmd => (
                 <CommandItem
@@ -314,7 +356,9 @@ function AppContent() {
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{cmd.icon}</span>
                     <div className="flex-1">
-                      <div className="font-medium">{cmd.name}</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                        {cmd.name}
+                      </div>
                       {cmd.description && (
                         <div className="text-sm text-gray-500 dark:text-gray-400">
                           {cmd.description}
@@ -329,18 +373,71 @@ function AppContent() {
 
         {/* CATEGORY VIEW */}
         {view.type === 'category' && view.categoryId && (
-          <CategoryList
-            categoryId={view.categoryId}
-            onSelect={handleCommandSelect}
-          />
+          <ErrorBoundary
+            isolationLevel="component"
+            fallback={(error, reset) => (
+              <div className="p-6 text-center">
+                <p className="mb-3 text-red-500">Failed to load category</p>
+                <button
+                  onClick={reset}
+                  className="text-blue-500 hover:text-blue-600"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          >
+            <CategoryList
+              categoryId={view.categoryId}
+              onSelect={handleCommandSelect}
+            />
+          </ErrorBoundary>
         )}
 
-        {/* PORTAL VIEW: Bookmarks, History, etc. */}
-        {view.type === 'portal' && view.portalId && (
-          <div className="p-4 text-sm text-gray-500">
-            Opening{' '}
-            {view.portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'} ...
-          </div>
+        {/* PORTAL VIEW: Bookmarks */}
+        {view.type === 'portal' && view.portalId === 'search-bookmarks' && (
+          <ErrorBoundary
+            isolationLevel="component"
+            fallback={(error, reset) => (
+              <div className="p-6 text-center">
+                <p className="mb-3 text-red-500">Failed to load bookmarks</p>
+                <button
+                  onClick={reset}
+                  className="text-blue-500 hover:text-blue-600"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          >
+            <BookmarksPortal
+              query={view.query || ''}
+              onSelect={handleBookmarkSelect}
+            />
+          </ErrorBoundary>
+        )}
+
+        {/* PORTAL VIEW: History */}
+        {view.type === 'portal' && view.portalId === 'search-history' && (
+          <ErrorBoundary
+            isolationLevel="component"
+            fallback={(error, reset) => (
+              <div className="p-6 text-center">
+                <p className="mb-3 text-red-500">Failed to load history</p>
+                <button
+                  onClick={reset}
+                  className="text-blue-500 hover:text-blue-600"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          >
+            <HistoryPortal
+              query={view.query || ''}
+              onSelect={handleHistorySelect}
+            />
+          </ErrorBoundary>
         )}
 
         {/* Empty state */}
