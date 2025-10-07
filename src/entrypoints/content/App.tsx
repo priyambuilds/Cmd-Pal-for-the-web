@@ -17,10 +17,8 @@ import PrefixHint from '@/components/PrefixHint'
 export default function App() {
   const [open, setOpen] = useState(false)
 
-  // Listen for Ctrl+K / Cmd+K directly in the content script
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl+K (Windows/Linux) or Cmd+K (Mac)
       if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
         console.log('Ctrl/Cmd+K detected!')
         e.preventDefault()
@@ -28,7 +26,6 @@ export default function App() {
         setOpen(prev => !prev)
       }
 
-      // Also listen for Escape to close
       if (e.key === 'Escape' && open) {
         e.preventDefault()
         setOpen(false)
@@ -62,21 +59,20 @@ export default function App() {
 function CommandContent({ onClose }: { onClose: () => void }) {
   const store = useCommandContext()
 
-  // Subscribe to current view
   const view = useSyncExternalStore(
     store.subscribe,
     () => store.getState().view
   )
 
-  // ✅ ALWAYS call useEffect at top level (never conditionally!)
-  useEffect(() => {
-    // Only act when in root view
-    if (view.type === 'root') {
-      const { hasPrefix, isInternal, portalId, shouldNavigate } = parsePrefix(
-        view.query
-      )
+  const viewType = view.type
+  const viewQuery = view.query
 
-      // Navigate to internal portal when prefix + space detected
+  // ✅ FIXED: Removed 'store' from dependencies
+  useEffect(() => {
+    if (viewType === 'root') {
+      const { hasPrefix, isInternal, portalId, shouldNavigate } =
+        parsePrefix(viewQuery)
+
       if (hasPrefix && isInternal && portalId && shouldNavigate) {
         store.navigate({
           type: 'portal',
@@ -85,7 +81,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
         })
       }
     }
-  }, [view.type, view.query, store])
+  }, [viewType, viewQuery]) // ✅ Only viewType and viewQuery
 
   // Handle command selection
   const handleCommandSelect = (command: CommandType) => {
@@ -128,11 +124,10 @@ function CommandContent({ onClose }: { onClose: () => void }) {
     }
 
     // ----- External Prefixes (!g, !yt, etc.) -----
-    // Show hint when prefix typed but no space
     if (hasPrefix && !isInternal && mapping && !shouldNavigate) {
       return (
         <>
-          <CommandInput placeholder="Search commands..." autofocus />
+          <CommandInput placeholder="Search commands..." autoFocus />
           <div className="p-8 text-center text-gray-500">
             <span className="block mb-4 text-4xl">{mapping.icon}</span>
             <p className="text-lg font-medium">{mapping.name}</p>
@@ -149,7 +144,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       )
     }
 
-    // Show search UI when prefix + space typed
     if (hasPrefix && !isInternal && mapping && shouldNavigate) {
       const searchUrl = mapping.urlTemplate.replace(
         '{query}',
@@ -159,7 +153,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       if (searchTerm) {
         return (
           <>
-            <CommandInput placeholder="Search commands..." autofocus />
+            <CommandInput placeholder="Search commands..." autoFocus />
             <CommandList>
               <CommandItem
                 key="prefix-search"
@@ -197,7 +191,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       } else {
         return (
           <>
-            <CommandInput placeholder="Search commands..." autofocus />
+            <CommandInput placeholder="Search commands..." autoFocus />
             <div className="p-8 text-center text-gray-500">
               <span className="block mb-4 text-4xl">{mapping.icon}</span>
               <p className="font-medium">{mapping.name}</p>
@@ -211,13 +205,11 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       }
     }
 
-    // ----- No Prefix - Normal Behavior -----
-
-    // Empty query - show suggestions
+    // ----- No Prefix -----
     if (!view.query) {
       return (
         <>
-          <CommandInput placeholder="Search commands..." autofocus />
+          <CommandInput placeholder="Search commands..." autoFocus />
           <div className="max-h-[400px] overflow-y-auto py-2">
             <RecentCommands
               onSelect={id => {
@@ -247,7 +239,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
 
     return (
       <>
-        <CommandInput placeholder="Search commands..." autofocus />
+        <CommandInput placeholder="Search commands..." autoFocus />
         <CommandList>
           {filteredCommands.map(cmd => (
             <CommandItem
@@ -306,7 +298,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
         <BackButton />
         <CommandInput
           placeholder={portal.searchPlaceholder || 'Search...'}
-          autofocus
+          autoFocus
         />
         <div className="min-h-[200px]">
           {portal.renderContent(view.query, { onClose, store })}
@@ -330,7 +322,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
     return (
       <>
         <BackButton />
-        <CommandInput placeholder={`Search ${category.name}...`} autofocus />
+        <CommandInput placeholder={`Search ${category.name}...`} autoFocus />
         <CommandList>
           {categoryCommands.map(cmd => (
             <CommandItem

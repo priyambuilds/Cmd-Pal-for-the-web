@@ -1,34 +1,19 @@
-import { useId, useSyncExternalStore } from 'react'
+import { useId, useSyncExternalStore, useState, useEffect } from 'react'
 import { useCommandContext } from '@/types/context'
-
-/**
-User types "calc"
-     ↓
-handleChange() called
-     ↓
-store.setState({ search: "calc", open: true })
-     ↓
-Store notifies subscribers
-     ↓
-Input re-renders with new value
-     ↓
-CommandList (next component) re-filters items
- */
 
 export interface CommandInputProps {
   placeholder?: string
-  autofocus?: boolean
+  autoFocus?: boolean
   className?: string
 }
 
 /**
  * The search input for the command palette.
- * Handles user text input and updates the store.
+ * Uses local state for immediate updates, syncs to store for global state.
  */
-
 export default function CommandInput({
   placeholder = 'Type a command or search...',
-  autofocus = false,
+  autoFocus = false,
   className = '',
 }: CommandInputProps) {
   const store = useCommandContext()
@@ -37,33 +22,45 @@ export default function CommandInput({
   const inputId = useId()
   const listboxId = `${inputId}-listbox`
 
-  // Subscribe to search value from store
-  const query = useSyncExternalStore(
+  // Subscribe to store query (for external updates like navigation)
+  const storeQuery = useSyncExternalStore(
     store.subscribe,
     () => store.getState().view.query
   )
-  // Subscribe to open state to set aria-expanded
+
+  // Subscribe to open state
   const open = useSyncExternalStore(
     store.subscribe,
     () => store.getState().open
   )
+
   // Subscribe to activeId for aria-activedescendant
   const activeId = useSyncExternalStore(
     store.subscribe,
     () => store.getState().activeId
   )
 
+  // LOCAL STATE: For immediate, fast typing
+  const [localValue, setLocalValue] = useState(storeQuery)
+
+  // SYNC FROM STORE: When store changes externally (navigation, back button)
+  useEffect(() => {
+    setLocalValue(storeQuery)
+  }, [storeQuery])
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
-    const currentView = store.getState().view
 
-    // Single setState call - more efficient
+    // Update local state immediately (no parent re-render)
+    setLocalValue(newValue)
+
+    // Update store (parent will handle this in useEffect)
+    const currentView = store.getState().view
     store.setState({
       view: {
         ...currentView,
         query: newValue,
       },
-      open: newValue.length > 0,
     })
   }
 
@@ -85,6 +82,7 @@ export default function CommandInput({
           />
         </svg>
       </div>
+
       {/* Input Field */}
       <input
         id={inputId}
@@ -97,8 +95,8 @@ export default function CommandInput({
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
-        autoFocus={autofocus}
-        value={query}
+        autoFocus={autoFocus}
+        value={localValue} // ✅ Use local state, not store query
         onChange={handleChange}
         placeholder={placeholder}
         className={`
