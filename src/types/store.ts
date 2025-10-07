@@ -41,18 +41,31 @@ async function saveRecentCommands(commands: string[]): Promise<void> {
   try {
     await chrome.storage.local.set({ [STORAGE_KEY]: commands })
   } catch (error) {
-    console.error('Failed to save recent commands to storage', error)
+    console.error('Failed to save recent commands to storage:', error)
   }
 }
 
 /**
+ * Command Store Interface
+ * Explicitly defines all methods available on the store
+ */
+interface CommandStore {
+  subscribe: (callback: Subscriber) => () => void
+  getState: () => CommandState
+  setState: (partial: Partial<CommandState>) => void
+  navigate: (newView: ViewState) => void
+  goBack: () => boolean // ← Changed to return boolean
+  init: () => Promise<void>
+  addRecentCommand: (commandId: string) => Promise<void>
+  cleanup?: () => void
+}
+/**
  * Creates a production-grade store with memory leak prevention
  */
-export function createStore<T extends CommandState>(initialState: T) {
+export function createStore(initialState: CommandState): CommandStore {
   let state = initialState
 
-  // Use Map instead of Set for better Metadata tracking
-  // Why: Maps allow us to store metadata alongside the callback. We can quickly look up by ID and track additional info.
+  // Use Map instead of Set for better metadata tracking
   const subscribers = new Map<number, SubscriptionMeta>()
   let nextSubscriptionId = 0
 
@@ -126,44 +139,100 @@ export function createStore<T extends CommandState>(initialState: T) {
       try {
         // Update last active timestamp
         meta.lastActive = now
-
         // Call the subscriber
         meta.callback()
       } catch (error) {
         console.error(`Error in subscriber ${id}:`, error)
-
         // Mark for removal if subscriber throws errors
-        // Why: If a subscriber throws an error (due to a bug), we automatically remove it to prevent cascading failures.
         staleSubscribers.push(id)
       }
     })
 
     // Cleanup any subscribers that threw errors
     staleSubscribers.forEach(id => {
+      subscribers.delete(id)
       console.warn(`Removing stale subscriber ${id} due to error`)
     })
   }
+
   /**
    * Get current state snapshot
    * This is called by React during renders
    */
-
-  function getState(): T {
+  function getState(): CommandState {
     return state
   }
 
   /**
    * Update state and notify subscribers
    */
-  function setState(partial: Partial<T>): void {
+  function setState(partial: Partial<CommandState>): void {
     const oldState = state
     state = { ...state, ...partial }
 
     // Only notify if state actually changed
-    // This prevents unnecessary re-renders
     if (oldState !== state) {
       notifySubscribers()
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📊 State updated:', partial)
+      }
     }
+  }
+
+  /**
+   * Navigate to a new view, preserving history
+   */
+  function navigate(newView: ViewState): void {
+    const currentView = state.view
+
+    setState({
+      view: newView,
+      history: [...state.history, currentView],
+    })
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🧭 Navigated to: ${newView.type}`)
+    }
+  }
+
+  /**
+   * Go back to the previous view
+   * Returns true if successful, false otherwise
+   */
+  function goBack(): boolean {
+    const history = state.history
+
+    // Guard: Check if history is empty
+    if (history.length === 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('⚠️ No history to go back to')
+      }
+      return false
+    }
+
+    // Get the previous view with explicit type check
+    const previousView: ViewState | undefined = history[history.length - 1]
+
+    // Guard: Ensure previousView exists
+    if (!previousView) {
+      console.error(
+        '❌ Previous view is undefined despite history length check'
+      )
+      return false
+    }
+
+    // Update state (TypeScript knows previousView is ViewState now)
+    setState({
+      view: previousView,
+      history: history.slice(0, -1),
+    })
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`⬅️ Went back to: ${previousView.type}`)
+    }
+
+    return true
   }
 
   /**
@@ -172,7 +241,13 @@ export function createStore<T extends CommandState>(initialState: T) {
   async function init(): Promise<void> {
     try {
       const recentCommands = await loadRecentCommands()
-      setState({ recentCommands } as Partial<T>)
+      setState({ recentCommands })
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          `🚀 Store initialized with ${recentCommands.length} recent commands`
+        )
+      }
     } catch (error) {
       console.error('Failed to initialize store:', error)
     }
@@ -191,40 +266,43 @@ export function createStore<T extends CommandState>(initialState: T) {
     // Add to front and limit to MAX_RECENT
     const updated = [commandId, ...filtered].slice(0, MAX_RECENT)
 
-    // update state
+    // Update state
+    setState({ recentCommands: updated })
+
+    // Persist to storage
     await saveRecentCommands(updated)
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`⭐ Added to recent: ${commandId}`)
+    }
   }
 
   /**
    * Development only: Force cleanup of all subscribers
    * Useful for testing and debugging
    */
-  function cleanup() {
+  function cleanup(): void {
     if (process.env.NODE_ENV === 'development') {
       const count = subscribers.size
       subscribers.clear()
-      console.warn(`⚠️ Command Store: Cleaned up ${count} subscribers`)
+      console.warn(`🧹 Command Store: Cleaned up ${count} subscribers`)
     }
   }
 
-  return {
+  // Return store with explicit type
+  const store: CommandStore = {
     subscribe,
     getState,
     setState,
+    navigate,
+    goBack,
     init,
     addRecentCommand,
     ...(process.env.NODE_ENV === 'development' ? { cleanup } : {}),
   }
+
+  return store
 }
 
-export type CommandStore = ReturnType<typeof createStore<CommandState>>
-
-// How to test this?
-// Check current subscriber count
-// window.__COMMAND_STORE_DEBUG__.getSubscriberCount()
-
-// Log detailed subscriber info
-// window.__COMMAND_STORE_DEBUG__.logSubscribers()
-
-// After closing and reopening palette multiple times,
-// subscriber count should stay stable (not grow infinitely)
+// Export the type for use in other files
+export type { CommandStore }
