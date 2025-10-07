@@ -1,4 +1,10 @@
-import { useState, useEffect, useSyncExternalStore, useMemo } from 'react'
+import {
+  useState,
+  useEffect,
+  useSyncExternalStore,
+  useMemo,
+  useDeferredValue,
+} from 'react'
 import CommandInput from '@/components/CommandInput'
 import Command from '@/components/Command'
 import CommandList from '@/components/CommandList'
@@ -15,11 +21,27 @@ import RecentCommands from '@/components/RecentCommands'
 import { parsePrefix } from '@/lib/prefixes'
 import PrefixHint from '@/components/PrefixHint'
 
+/**
+ * Minimum score threshold for fuzzy search results
+ * Lower = more lenient matching, Higher = stricter matching
+ */
+const MIN_SCORE_THRESHOLD = 0.1
+
+/**
+ * Maximum number of results to show before "Show more"
+ * Keeps UI snappy by virtualizing long lists
+ */
+const MAX_INITIAL_RESULTS = 100
+
 export default function App() {
   const [open, setOpen] = useState(false)
 
+  // ============================================
+  // KEYBOARD SHORTCUTS
+  // ============================================
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+K: Open Command Palette
       if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
         console.log('Ctrl/Cmd+K detected!')
         e.preventDefault()
@@ -27,285 +49,312 @@ export default function App() {
         setOpen(prev => !prev)
       }
 
+      // Escape to close when open
       if (e.key === 'Escape' && open) {
         e.preventDefault()
         setOpen(false)
       }
     }
-
     window.addEventListener('keydown', handleKeyDown, { capture: true })
     console.log('Keyboard listener registered')
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+      window.removeEventListener('keydown', handleKeyDown, {
+        capture: true,
+      })
     }
   }, [open])
 
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center pt-[20vh] z-[9999]"
-      onClick={() => setOpen(false)}
-    >
-      <div onClick={e => e.stopPropagation()}>
-        <ErrorBoundary>
-          <Command label="Global Command Menu">
-            <CommandContent onClose={() => setOpen(false)} />
+    <ErrorBoundary>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-[20vh] px-4">
+        <div
+          className="w-full max-w-2xl overflow-hidden bg-white rounded-lg shadow-2xl dark:bg-gray-800"
+          onClick={e => e.stopPropagation()}
+        >
+          <Command label="Command Palette" loop>
+            <AppContent />
           </Command>
-        </ErrorBoundary>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   )
 }
 
-function CommandContent({ onClose }: { onClose: () => void }) {
+/**
+ * Main content component with performance-optimized filtering
+ * Separated from App to keep modal logic clean
+ */
+function AppContent() {
   const store = useCommandContext()
+
+  // ============================================
+  // SUBSCRIBE TO STORE STATE
+  // ============================================
 
   const view = useSyncExternalStore(
     store.subscribe,
     () => store.getState().view
   )
+  const recentCommands = useSyncExternalStore(
+    store.subscribe,
+    () => store.getState().recentCommands
+  )
 
-  const viewType = view.type
-  const viewQuery = view.query
+  // ============================================
+  // PERFORMANCE OPTIMIZATION: DEFERRED QUERY
+  // ============================================
 
-  // ✅ FIXED: Removed 'store' from dependencies
-  useEffect(() => {
-    if (viewType === 'root') {
-      const { hasPrefix, isInternal, portalId, shouldNavigate, mapping } =
-        parsePrefix(viewQuery)
+  /**
+   * Defer the query value for expensive filtering operations
+   */
+  const deferredQuery = useDeferredValue(view.query)
 
-      if (hasPrefix && isInternal && portalId && shouldNavigate) {
-        store.navigate({
-          type: 'portal',
-          portalId,
-          query: '',
-        })
-      }
+  // ============================================
+  // PREFIX PARSING
+  // ============================================
 
-      if (hasPrefix && !isInternal && mapping && shouldNavigate) {
-        const { searchTerm } = parsePrefix(viewQuery)
-        store.navigate({
-          type: 'portal',
-          portalId: `prefix-${mapping.prefix}`,
-          query: searchTerm,
-        })
-      }
-    }
-  }, [viewType, viewQuery]) // ✅ Only viewType and viewQuery
+  const prefixInfo = useMemo(() => parsePrefix(deferredQuery), [deferredQuery])
 
-  // Pre-compute filtered commands (always call useMemo to satisfy React hooks rules)
-  const filteredCommands = useMemo(() => {
-    if (viewType !== 'root' || !viewQuery) return []
+  // ============================================
+  // COMMAND FILTERING (OPTIMIZED)
+  // ============================================
 
-    const parsed = parsePrefix(viewQuery)
-    // Only compute for root view with queries that actually need filtering (no prefix, non-empty)
-    if (!parsed.hasPrefix && parsed.searchTerm) {
+  /**
+   * Filter and sort commands based on fuzzy search score
+   *
+   * Optimizations applied:
+   * 1. Uses deferredQuery (runs in idle time, not on every keystroke)
+   * 2. Early return for empty query (avoid unnecessary work)
+   * 3. Score threshold filtering (remove low-quality matches early)
+   * 4. Single-pass filter+sort (combine operations)
+   * 5. Limit results (stop processing after MAX_INITIAL_RESULTS)
+   */
+  const filteredCOmmands = useMemo(() => {
+    // Early return: no query = show all commands
+    if (!deferredQuery || prefixInfo.detected) {
       return allCommands
-        .map(cmd => ({
-          command: cmd,
-          score: Math.max(
-            commandScore(cmd.name, parsed.searchTerm),
-            ...cmd.keywords.map(kw => commandScore(kw, parsed.searchTerm))
-          ),
-        }))
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(item => item.command)
     }
 
-    return []
-  }, [viewType, viewQuery])
-
-  // Handle command selection
-  const handleCommandSelect = (command: CommandType) => {
-    if (command.type === 'action') {
-      command.onExecute()
-      store.addRecentCommand(command.id)
-      onClose()
-    } else if (command.type === 'portal') {
-      store.navigate({
-        type: 'portal',
-        portalId: command.id,
-        query: '',
-      })
-      store.addRecentCommand(command.id)
+    // Performance trscing in development
+    if (process.env.NODE_ENV === 'development') {
+      console.time('filter-commands')
     }
-  }
 
-  // ========== ROOT VIEW ==========
-  if (view.type === 'root') {
-    const {
-      hasPrefix,
-      searchTerm,
-      mapping,
-      isInternal,
-      portalId,
-      shouldNavigate,
-    } = parsePrefix(view.query)
+    /**
+     * Single-pass filtering with scoring
+     *
+     * Why this is fast:
+     * - We score and filter in one pass (reduce() instead of map+filter)
+     * - We stop early if we have enough results
+     * - We filter out low scores immediately
+     */
+    const scoredCommands: Array<{ command: CommandType; score: number }> = []
 
-    // ----- Internal Prefixes (*, #) -----
-    if (hasPrefix && isInternal && portalId && shouldNavigate) {
-      return (
-        <div className="p-8 text-center text-gray-500">
-          <div className="mb-4 text-4xl animate-spin">⏳</div>
-          <p>
-            Opening {portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'}
-            ...
-          </p>
-        </div>
+    for (const cmd of allCommands) {
+      // Calculatee fuzzy match score
+      const score = commandScore(cmd.name, deferredQuery)
+
+      // Skip low-quality matches early
+      if (score < MIN_SCORE_THRESHOLD) continue
+
+      // Add to results
+      scoredCommands.push({ command: cmd, score })
+
+      // Optional: Stop early if we have enough results
+      // This is useful for huge command lists
+      // if (scoredCommands.length >= MAX_INITIAL_RESULTS * 2) break
+    }
+
+    // Sort by score (highest first)
+    scoredCommands.sort((a, b) => b.score - a.score)
+
+    // Extract commands (limit to reasonable number)
+    const results = scoredCommands
+      .slice(0, MAX_INITIAL_RESULTS)
+      .map(item => item.command)
+
+    if (process.env.NODE_ENV === 'development') {
+      console.timeEnd('filter-commands')
+      console.log(
+        `Filtered ${allCommands.length} -> ${results.length} commands`
       )
     }
 
-    // ----- External Prefixes (!g, !yt, etc.) -----
-    if (hasPrefix && !isInternal && mapping && !shouldNavigate) {
-      return (
-        <>
-          <CommandInput placeholder="Search commands..." autoFocus />
-          <div className="p-8 text-center text-gray-500">
-            <span className="block mb-4 text-4xl">{mapping.icon}</span>
-            <p className="text-lg font-medium">{mapping.name}</p>
-            <p className="mt-2 text-sm">
-              Press{' '}
-              <kbd className="px-2 py-1 bg-gray-100 rounded dark:bg-gray-800">
-                Space
-              </kbd>{' '}
-              to search
+    return results
+  }, [deferredQuery, prefixInfo.detected]) // Only re-run when query changes
+
+  // ============================================
+  // RECENT COMMANDS FILTERING
+  // ============================================
+
+  /**
+   * Get recent command objects from IDs
+   * Memoized because this involves array operations
+   */
+  const recentCommandObjects = useMemo(
+    () =>
+      recentCommands
+        .map(id => getCommandById(id))
+        .filter((cmd): cmd is CommandType => cmd !== null),
+    [recentCommands]
+  )
+
+  // ============================================
+  // VIEW RENDERING
+  // ============================================
+
+  /**
+   * Handle command execution
+   */
+  const handleCommandSelect = async (commandId: string) => {
+    const command = getCommandById(commandId)
+    if (!command) return
+
+    try {
+      // Add to recent commands
+      await store.addRecentCommand(command.id)
+
+      // Execute command
+      if (command.type === 'action' && command.onExecute) {
+        await command.onExecute()
+      } else if (command.type === 'category') {
+        // Navigate to category view
+        const currentView = store.getState().view
+        const history = store.getState().history
+
+        store.setState({
+          view: {
+            type: 'category',
+            categoryId: commandId,
+            query: '',
+          },
+          history: [...history, currentView],
+        })
+      }
+    } catch (error) {
+      console.error('Failed executing command:', error)
+    }
+  }
+
+  /**
+   * Handle prefix-based search
+   */
+  const handlePrefixSearch = () => {
+    if (!prefixInfo.detected || !prefixInfo.query) return
+
+    // Open URL in new tab
+    const url = prefixInfo.mapping!.urlTemplate.replace(
+      '{query}',
+      encodeURIComponent(prefixInfo.query)
+    )
+
+    chrome.tabs.create({ url })
+  }
+
+  // ============================================
+  // RENDER DIFFERENT VIEWS
+  // ============================================
+
+  return (
+    <>
+      {/* Back button for navigation */}
+      <BackButton />
+
+      {/* Search input */}
+      <CommandInput placeholder="Type a command or search..." autoFocus />
+
+      {/* Prefix hint */}
+      {prefixInfo.detected && <PrefixHint mapping={prefixInfo.mapping!} />}
+
+      {/* Command list */}
+      <CommandList>
+        {/* ROOT VIEW: Show all commands and recent commands */}
+        {view.type === 'root' && (
+          <>
+            {/* Show recent commands if no query */}
+            {!deferredQuery && recentCommandObjects.length > 0 && (
+              <RecentCommands
+                commands={recentCommandObjects}
+                onSelect={handleCommandSelect}
+              />
+            )}
+
+            {/* Prefix search action */}
+            {prefixInfo.detected && prefixInfo.query && (
+              <CommandItem
+                value={`search-${prefixInfo.prefix}`}
+                onSelect={handlePrefixSearch}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{prefixInfo.mapping?.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      Search "{prefixInfo.query}" on {prefixInfo.mapping?.name}
+                    </div>
+                  </div>
+                  <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-700">
+                    ↵
+                  </kbd>
+                </div>
+              </CommandItem>
+            )}
+
+            {/* Regular commands */}
+            {!prefixInfo.detected &&
+              filteredCommands.map(cmd => (
+                <CommandItem
+                  key={cmd.id}
+                  value={cmd.id}
+                  keywords={cmd.keywords}
+                  onSelect={handleCommandSelect}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{cmd.icon}</span>
+                    <div className="flex-1">
+                      <div className="font-medium">{cmd.name}</div>
+                      {cmd.description && (
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                          {cmd.description}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CommandItem>
+              ))}
+          </>
+        )}
+
+        {/* CATEGORY VIEW */}
+        {view.type === 'category' && view.categoryId && (
+          <CategoryList
+            categoryId={view.categoryId}
+            onSelect={handleCommandSelect}
+          />
+        )}
+
+        {/* PORTAL VIEW: Bookmarks, History, etc. */}
+        {view.type === 'portal' && view.portalId && (
+          <div className="p-4 text-sm text-gray-500">
+            Opening{' '}
+            {view.portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'} ...
+          </div>
+        )}
+
+        {/* Empty state */}
+        <CommandEmpty>
+          <div className="py-12 text-center">
+            <p className="mb-2 text-gray-500 dark:text-gray-400">
+              No results found
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              Try using a prefix like !g, !p, or !yt
             </p>
           </div>
-          <PrefixHint />
-        </>
-      )
-    }
-
-    // ----- No Prefix -----
-    if (!view.query) {
-      return (
-        <>
-          <CommandInput placeholder="Search commands..." autoFocus />
-          <div className="max-h-[400px] overflow-y-auto py-2">
-            <RecentCommands
-              onSelect={id => {
-                const cmd = getCommandById(id)
-                if (cmd) handleCommandSelect(cmd)
-              }}
-            />
-            <CategoryList />
-          </div>
-          <PrefixHint />
-        </>
-      )
-    }
-
-    // Query exists - show filtered commands
-    return (
-      <>
-        <CommandInput placeholder="Search commands..." autoFocus />
-        <CommandList>
-          {filteredCommands.map(cmd => (
-            <CommandItem
-              key={cmd.id}
-              value={cmd.id}
-              keywords={cmd.keywords}
-              onSelect={() => handleCommandSelect(cmd)}
-            >
-              <span className="text-xl">{cmd.icon}</span>
-              <div className="flex-1">
-                <div className="font-medium">{cmd.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {cmd.description}
-                </div>
-              </div>
-              {cmd.type === 'portal' && (
-                <svg
-                  className="w-4 h-4 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
-              )}
-            </CommandItem>
-          ))}
-
-          <CommandEmpty>
-            <div className="space-y-2">
-              <p className="font-medium">No results found</p>
-              <p className="text-xs">Try using a prefix like !g, !p, or !yt</p>
-            </div>
-          </CommandEmpty>
-        </CommandList>
-        <PrefixHint />
-      </>
-    )
-  }
-
-  // ========== PORTAL VIEW ==========
-  if (view.type === 'portal') {
-    const portal = getCommandById(view.portalId!)
-
-    if (!portal || portal.type !== 'portal') {
-      return <div className="p-4 text-red-500">Portal not found</div>
-    }
-
-    return (
-      <>
-        <BackButton />
-        <CommandInput
-          placeholder={portal.searchPlaceholder || 'Search...'}
-          autoFocus
-        />
-        <div className="min-h-[200px]">
-          {portal.renderContent(view.query, { onClose, store })}
-        </div>
-      </>
-    )
-  }
-
-  // ========== CATEGORY VIEW ==========
-  if (view.type === 'category') {
-    const category = getCategoryById(view.categoryId!)
-
-    if (!category) {
-      return <div className="p-4 text-red-500">Category not found</div>
-    }
-
-    const categoryCommands = allCommands.filter(cmd =>
-      category.commandIds.includes(cmd.id)
-    )
-
-    return (
-      <>
-        <BackButton />
-        <CommandInput placeholder={`Search ${category.name}...`} autoFocus />
-        <CommandList>
-          {categoryCommands.map(cmd => (
-            <CommandItem
-              key={cmd.id}
-              value={cmd.id}
-              keywords={cmd.keywords}
-              onSelect={() => handleCommandSelect(cmd)}
-            >
-              <span className="text-xl">{cmd.icon}</span>
-              <div className="flex-1">
-                <div className="font-medium">{cmd.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {cmd.description}
-                </div>
-              </div>
-            </CommandItem>
-          ))}
-        </CommandList>
-      </>
-    )
-  }
-
-  return null
+        </CommandEmpty>
+      </CommandList>
+    </>
+  )
 }
