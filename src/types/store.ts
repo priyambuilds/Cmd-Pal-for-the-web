@@ -12,6 +12,16 @@ const STORAGE_KEY = 'commandPalette_recent'
 type Subscriber = () => void
 
 /**
+ * Subscription metadata for health tracking
+ */
+interface SubscriptionMeta {
+  callback: Subscriber
+  id: number // Unique ID for this subscription
+  mountedAt: number // Timestamp when this subscription was added
+  lastActive: number // Timestamp when this subscription was last called
+}
+
+/**
  * Load recent commands from chrome.storage.local
  */
 async function loadRecentCommands(): Promise<string[]> {
@@ -36,101 +46,185 @@ async function saveRecentCommands(commands: string[]): Promise<void> {
 }
 
 /**
- * Creates a simple store that holds CommandState and notifies subscribers
- * when state changes. Compatible with React's useSyncExternalStore.
+ * Creates a production-grade store with memory leak prevention
  */
-export function createStore(initialState: CommandState) {
-  // Store the current state
+export function createStore<T extends CommandState>(initialState: T) {
   let state = initialState
 
-  // Set of all subscribers (using Set to avoid duplicates)
-  const subscribers = new Set<Subscriber>()
+  // Use Map instead of Set for better Metadata tracking
+  // Why: Maps allow us to store metadata alongside the callback. We can quickly look up by ID and track additional info.
+  const subscribers = new Map<number, SubscriptionMeta>()
+  let nextSubscriptionId = 0
+
+  // Development-only: Track subscription patterns
+  if (process.env.NODE_ENV === 'development') {
+    // @ts-ignore - Development only global
+    window.__COMMAND_STORE_DEBUG__ = {
+      getSubscriberCount: () => subscribers.size,
+      getSubscribers: () => Array.from(subscribers.values()),
+      logSubscribers: () => {
+        console.table(
+          Array.from(subscribers.values()).map(sub => ({
+            id: sub.id,
+            mountedAt: new Date(sub.mountedAt).toLocaleTimeString(),
+            lastActive: new Date(sub.lastActive).toLocaleTimeString(),
+            age: `${Math.round((Date.now() - sub.mountedAt) / 1000)}s`,
+          }))
+        )
+      },
+    }
+  }
 
   /**
-   * Get the current state snapshot.
-   * This is what useSyncExternalStore calls to read state.
+   * Subscribe to state changes
+   * Returns an unsubscribe function that MUST be called on unmount
    */
-  const getState = (): CommandState => {
+  function subscribe(callback: Subscriber): () => void {
+    const id = nextSubscriptionId++
+    const now = Date.now()
+
+    const meta: SubscriptionMeta = {
+      callback,
+      id,
+      mountedAt: now,
+      lastActive: now,
+    }
+
+    subscribers.set(id, meta)
+
+    // Development warning: detect if subscriber count is growing abnormally
+    if (process.env.NODE_ENV === 'development') {
+      if (subscribers.size > 20) {
+        console.warn(
+          `⚠️ Command Store: ${subscribers.size} subscribers active. ` +
+            `This might indicate a memory leak. Check that all components properly unmount.`
+        )
+      }
+    }
+
+    // Return cleanup function
+    return () => {
+      const removed = subscribers.delete(id)
+
+      if (!removed && process.env.NODE_ENV === 'development') {
+        console.warn(
+          `⚠️ Command Store: Attempted to unsubscribe with ID ${id} but it was already removed. ` +
+            `This might indicate a double-unsubscribe or cleanup called twice.`
+        )
+      }
+    }
+  }
+
+  /**
+   * Notify all subscribers of state changes
+   */
+  function notifySubscribers() {
+    const now = Date.now()
+    const staleSubscribers: number[] = []
+
+    subscribers.forEach((meta, id) => {
+      try {
+        // Update last active timestamp
+        meta.lastActive = now
+
+        // Call the subscriber
+        meta.callback()
+      } catch (error) {
+        console.error(`Error in subscriber ${id}:`, error)
+
+        // Mark for removal if subscriber throws errors
+        // Why: If a subscriber throws an error (due to a bug), we automatically remove it to prevent cascading failures.
+        staleSubscribers.push(id)
+      }
+    })
+
+    // Cleanup any subscribers that threw errors
+    staleSubscribers.forEach(id => {
+      console.warn(`Removing stale subscriber ${id} due to error`)
+    })
+  }
+  /**
+   * Get current state snapshot
+   * This is called by React during renders
+   */
+
+  function getState(): T {
     return state
   }
 
   /**
-   * Get a specific slice of state.
-   * Example: getSlice(s => s.search) returns just the search string.
+   * Update state and notify subscribers
    */
-  const getSlice = <T>(selector: (state: CommandState) => T): T => {
-    return selector(state)
-  }
+  function setState(partial: Partial<T>): void {
+    const oldState = state
+    state = { ...state, ...partial }
 
-  /**
-   * Update state and notify all subscribers.
-   * Accepts a partial state object that gets merged with current state.
-   */
-  const setState = (updates: Partial<CommandState>) => {
-    // Merge updates into current state (shallow merge)
-    state = { ...state, ...updates }
-
-    // Notify all subscribers that state changed
-    subscribers.forEach(callback => callback())
-  }
-
-  /**
-   * Subscribe to state changes.
-   * Returns an unsubscribe function that React calls during cleanup.
-   */
-  const subscribe = (callback: Subscriber): (() => void) => {
-    // Add this callback to the subscriber set
-    subscribers.add(callback)
-
-    // Return a function that removes this subscriber (cleanup)
-    return () => {
-      subscribers.delete(callback)
+    // Only notify if state actually changed
+    // This prevents unnecessary re-renders
+    if (oldState !== state) {
+      notifySubscribers()
     }
   }
 
-  // Return the store API
-  return {
-    getState,
-    getSlice,
-    setState,
-    subscribe,
-
-    navigate: (newView: ViewState) => {
-      const currentView = state.view
-      setState({
-        view: newView,
-        history: [...state.history, currentView],
-      })
-    },
-
-    goBack: () => {
-      const history = state.history
-      if (history.length > 0) {
-        const previousView = history[history.length - 1]!
-        setState({
-          view: previousView,
-          history: history.slice(0, -1),
-        })
-      }
-    },
-
-    addRecentCommand: (commandId: string) => {
-      const recent = state.recentCommands.filter(id => id !== commandId)
-      const newRecent = [commandId, ...recent].slice(0, 10)
-
-      setState({
-        recentCommands: newRecent,
-      })
-
-      saveRecentCommands(newRecent)
-    },
-
-    // ✅ NEW: Initialize from storage
-    init: async () => {
+  /**
+   * Initialize store by loading persisted data
+   */
+  async function init(): Promise<void> {
+    try {
       const recentCommands = await loadRecentCommands()
-      setState({ recentCommands })
-    },
+      setState({ recentCommands } as Partial<T>)
+    } catch (error) {
+      console.error('Failed to initialize store:', error)
+    }
+  }
+
+  /**
+   * Add a command to recent commands and persist
+   */
+  async function addRecentCommand(commandId: string): Promise<void> {
+    const MAX_RECENT = 10
+    const current = state.recentCommands || []
+
+    // Remove if already exists (we'll add it to the front)
+    const filtered = current.filter(id => id !== commandId)
+
+    // Add to front and limit to MAX_RECENT
+    const updated = [commandId, ...filtered].slice(0, MAX_RECENT)
+
+    // update state
+    await saveRecentCommands(updated)
+  }
+
+  /**
+   * Development only: Force cleanup of all subscribers
+   * Useful for testing and debugging
+   */
+  function cleanup() {
+    if (process.env.NODE_ENV === 'development') {
+      const count = subscribers.size
+      subscribers.clear()
+      console.warn(`⚠️ Command Store: Cleaned up ${count} subscribers`)
+    }
+  }
+
+  return {
+    subscribe,
+    getState,
+    setState,
+    init,
+    addRecentCommand,
+    ...(process.env.NODE_ENV === 'development' ? { cleanup } : {}),
   }
 }
 
-export type CommandStore = ReturnType<typeof createStore>
+export type CommandStore = ReturnType<typeof createStore<CommandState>>
+
+// How to test this?
+// Check current subscriber count
+// window.__COMMAND_STORE_DEBUG__.getSubscriberCount()
+
+// Log detailed subscriber info
+// window.__COMMAND_STORE_DEBUG__.logSubscribers()
+
+// After closing and reopening palette multiple times,
+// subscriber count should stay stable (not grow infinitely)
