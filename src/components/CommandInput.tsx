@@ -1,4 +1,4 @@
-import { useId, useSyncExternalStore, useState, useEffect } from 'react'
+import { useId, useSyncExternalStore, useRef, useCallback } from 'react'
 import { useCommandContext } from '@/types/context'
 
 export interface CommandInputProps {
@@ -9,7 +9,10 @@ export interface CommandInputProps {
 
 /**
  * The search input for the command palette.
- * Uses local state for immediate updates, syncs to store for global state.
+ * Uses store as single source of truth - no local state.
+ *
+ * Performance: Store updates are synchronous and batched by React.
+ * This prevents the race condition from dual state management.
  */
 export default function CommandInput({
   placeholder = 'Type a command or search...',
@@ -18,12 +21,19 @@ export default function CommandInput({
 }: CommandInputProps) {
   const store = useCommandContext()
 
+  // refs for DOM management
+  const inputRef = useRef<HTMLInputElement>(null)
+
   // Generate stable IDs for accessibility
   const inputId = useId()
   const listboxId = `${inputId}-listbox`
 
-  // Subscribe to store query (for external updates like navigation)
-  const storeQuery = useSyncExternalStore(
+  // ============================================
+  // SUBSCRIBE TO STORE (Single Source of Truth)
+  // ============================================
+
+  // Get query directly from store - no local state
+  const query = useSyncExternalStore(
     store.subscribe,
     () => store.getState().view.query
   )
@@ -34,35 +44,86 @@ export default function CommandInput({
     () => store.getState().open
   )
 
-  // Subscribe to activeId for aria-activedescendant
+  // Subscriber to activeId for aria-activedescendant
   const activeId = useSyncExternalStore(
     store.subscribe,
     () => store.getState().activeId
   )
 
-  // LOCAL STATE: For immediate, fast typing
-  const [localValue, setLocalValue] = useState(storeQuery)
+  // ============================================
+  // EVENT HANDLERS
+  // ============================================
 
-  // SYNC FROM STORE: When store changes externally (navigation, back button)
-  useEffect(() => {
-    setLocalValue(storeQuery)
-  }, [storeQuery])
+  /**
+   * Handle input changes
+   * Updates store directly - React batches the re-render
+   */
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = e.target.value
+      const currentView = store.getState().view
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value
+      // Single update to store
+      // React will batch this with any other state updates
+      store.setState({
+        view: {
+          ...currentView,
+          query: newValue,
+        },
+      })
+    },
+    [store]
+  )
 
-    // Update local state immediately (no parent re-render)
-    setLocalValue(newValue)
+  /**
+   * Handle key presses for special behavior
+   */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // Prevent arrow keys from moving cursor when navigating list
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+      }
 
-    // Update store (parent will handle this in useEffect)
-    const currentView = store.getState().view
-    store.setState({
-      view: {
-        ...currentView,
-        query: newValue,
-      },
-    })
-  }
+      // Clear input on Escape
+      if (e.key === 'Escape') {
+        const currentView = store.getState().view
+
+        if (currentView.query) {
+          // Clear query first
+          e.stopPropagation()
+          store.setState({
+            view: {
+              ...currentView,
+              query: '',
+            },
+          })
+        } else {
+          // If query is already empty, close the palette
+          store.setState({ open: false })
+        }
+      }
+    },
+    [store]
+  )
+
+  /**
+   * Auto-focus when palette opens
+   */
+  const handleFocus = useCallback(() => {
+    if (autoFocus && inputRef.current && open) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
+    }
+  }, [autoFocus, open])
+
+  // Focus input when palette opens
+  useSyncExternalStore(store.subscribe, () => {
+    handleFocus()
+    return open
+  })
 
   return (
     <div className="relative flex items-center border-b border-gray-200 dark:border-gray-800">
@@ -85,20 +146,23 @@ export default function CommandInput({
 
       {/* Input Field */}
       <input
+        ref={inputRef}
         id={inputId}
         type="text"
         role="combobox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-activedescendant={activeId || undefined}
         aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-activedescendant={activeId || undefined}
+        aria-label="Command palette search"
+        placeholder={placeholder}
+        value={query}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
         autoComplete="off"
         autoCorrect="off"
+        autoCapitalize="off"
         spellCheck={false}
-        autoFocus={autoFocus}
-        value={localValue} // ✅ Use local state, not store query
-        onChange={handleChange}
-        placeholder={placeholder}
         className={`
           flex-1
           py-4 pr-4
