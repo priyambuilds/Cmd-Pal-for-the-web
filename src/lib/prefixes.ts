@@ -1,11 +1,18 @@
+/**
+ * External search prefix mapping
+ * Maps prefixes like !g, !yt to search URLs
+ */
 export interface PrefixMapping {
   prefix: string
   name: string
   icon: string
   description: string
-  urlTemplate: string
+  urlTemplate: string // Use {query} as placeholder
 }
 
+/**
+ * External prefix mappings (search engines, websites)
+ */
 export const prefixMappings: PrefixMapping[] = [
   {
     prefix: '!g',
@@ -79,6 +86,10 @@ export const prefixMappings: PrefixMapping[] = [
   },
 ]
 
+/**
+ * Internal prefix configuration
+ * Maps prefixes like *, # to portals
+ */
 export const internalPrefixes = [
   {
     prefix: '*',
@@ -93,86 +104,109 @@ export const internalPrefixes = [
 ]
 
 /**
- * Parse query to detect prefix
+ * Result of parsing a query for prefix detection
  */
-export function parsePrefix(query: string): {
-  hasPrefix: boolean
-  prefix: string | null
-  searchTerm: string
-  mapping: PrefixMapping | null
-  isInternal: boolean
-  portalId?: string
-  shouldNavigate: boolean
-} {
-  // Don't trim! We need to detect the space character
+export interface PrefixInfo {
+  detected: boolean // Whether a prefix was detected
+  prefix: string | null // The prefix itself (!g, *, etc)
+  query: string // The search term after the prefix
+  mapping: PrefixMapping | null // PrefixMapping if external prefix
+  isInternal: boolean // Whether it's internal (*, #)
+  portalId?: string // Portal ID for internal prefixes
+  shouldNavigate: boolean // Whether to navigate to portal/search
+}
+
+/**
+ * Parse query to detect prefix
+ *
+ * Examples:
+ * - "!g hello" → { detected: true, prefix: "!g", query: "hello", mapping: {...} }
+ * - "* something" → { detected: true, prefix: "*", query: "something", isInternal: true }
+ * - "normal query" → { detected: false, prefix: null, query: "normal query" }
+ *
+ * @param query The search query to parse
+ * @returns PrefixInfo object with detection results
+ */
+export function parsePrefix(query: string): PrefixInfo {
+  // Don't trim initially - we need to detect the space character
   const original = query
   const trimmed = query.trim()
 
-  // Check external prefixes (e.g., !g, !yt)
+  // ============================================
+  // CHECK EXTERNAL PREFIXES (e.g., !g, !yt)
+  // ============================================
+
   for (const mapping of prefixMappings) {
-    // Exactly the prefix
+    // Exactly the prefix (e.g., just "!g")
     if (trimmed === mapping.prefix) {
       return {
-        hasPrefix: true,
+        detected: true,
         prefix: mapping.prefix,
-        searchTerm: '',
+        query: '',
         mapping,
         isInternal: false,
-        shouldNavigate: false,
+        shouldNavigate: false, // No query yet, don't navigate
       }
     }
 
-    // Prefix + space
+    // Prefix + space + search term (e.g., "!g hello world")
     if (original.startsWith(mapping.prefix + ' ')) {
       return {
-        hasPrefix: true,
+        detected: true,
         prefix: mapping.prefix,
-        searchTerm: original.slice(mapping.prefix.length + 1).trim(),
+        query: original.slice(mapping.prefix.length + 1).trim(),
         mapping,
         isInternal: false,
-        shouldNavigate: true,
+        shouldNavigate: true, // Has query, navigate
       }
     }
   }
 
-  // Check internal prefixes (e.g., *, #)
+  // ============================================
+  // CHECK INTERNAL PREFIXES (e.g., *, #)
+  // ============================================
+
   for (const internal of internalPrefixes) {
-    // Exactly the prefix
+    // Exactly the prefix (e.g., just "*")
     if (trimmed === internal.prefix) {
       return {
-        hasPrefix: true,
+        detected: true,
         prefix: internal.prefix,
-        searchTerm: '',
+        query: '',
         mapping: null,
         isInternal: true,
         portalId: internal.portalId,
-        shouldNavigate: false,
+        shouldNavigate: false, // No query yet, don't navigate
       }
     }
 
-    // Check for space after prefix using original query
+    // Prefix + space + search term (e.g., "* bookmark name")
     if (original.startsWith(internal.prefix + ' ')) {
       const afterPrefix = original.slice(internal.prefix.length)
 
       // If there's a space and more characters, navigate
       if (afterPrefix.length > 0) {
         return {
-          hasPrefix: true,
+          detected: true,
           prefix: internal.prefix,
-          searchTerm: afterPrefix.trim(),
+          query: afterPrefix.trim(),
           mapping: null,
           isInternal: true,
           portalId: internal.portalId,
-          shouldNavigate: true, // Navigate!
+          shouldNavigate: true, // Has query, navigate to portal
         }
       }
     }
   }
 
+  // ============================================
+  // NO PREFIX DETECTED
+  // ============================================
+
   return {
-    hasPrefix: false,
+    detected: false,
     prefix: null,
-    searchTerm: trimmed,
+    query: trimmed,
     mapping: null,
     isInternal: false,
     shouldNavigate: false,

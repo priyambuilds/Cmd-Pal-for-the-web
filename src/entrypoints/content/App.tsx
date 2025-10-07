@@ -108,10 +108,17 @@ export default function App() {
   )
 }
 
-// AppContent Component - Main palette logic
+/**
+ * AppContent Component - Main palette logic
+ *
+ * Separated from App for cleaner architecture:
+ * - App handles modal state and shortcuts
+ * - AppContent handles command logic and rendering
+ */
 interface AppContentProps {
   onClose: () => void
 }
+
 function AppContent({ onClose }: AppContentProps) {
   const store = useCommandContext()
 
@@ -123,6 +130,7 @@ function AppContent({ onClose }: AppContentProps) {
     store.subscribe,
     () => store.getState().view
   )
+
   const recentCommands = useSyncExternalStore(
     store.subscribe,
     () => store.getState().recentCommands
@@ -133,9 +141,11 @@ function AppContent({ onClose }: AppContentProps) {
   // ============================================
 
   /**
-   * Defer the query value for expensive filtering operations
+   * Safe access to query with fallback
+   * view.query is optional, so we default to empty string
    */
-  const deferredQuery = useDeferredValue(view.query)
+  const query = view.query ?? ''
+  const deferredQuery = useDeferredValue(query)
 
   // ============================================
   // PREFIX PARSING
@@ -148,77 +158,58 @@ function AppContent({ onClose }: AppContentProps) {
   // ============================================
 
   /**
-   * Filter and sort commands based on fuzzy search score
+   * Filter and score commands based on query
    *
-   * Optimizations applied:
-   * 1. Uses deferredQuery (runs in idle time, not on every keystroke)
-   * 2. Early return for empty query (avoid unnecessary work)
-   * 3. Score threshold filtering (remove low-quality matches early)
-   * 4. Single-pass filter+sort (combine operations)
-   * 5. Limit results (stop processing after MAX_INITIAL_RESULTS)
+   * Performance optimizations:
+   * 1. Uses deferredQuery (runs in React idle time)
+   * 2. Early return for empty query
+   * 3. Single-pass scoring and filtering
+   * 4. Score threshold to skip poor matches
+   * 5. Limited results to reduce DOM nodes
    */
   const filteredCommands = useMemo(() => {
-    // Early return: no query = show all commands
+    // No query or prefix detected - show all commands
     if (!deferredQuery || prefixInfo.detected) {
       return allCommands
     }
 
-    // Performance trscing in development
+    // Development performance tracking
     if (process.env.NODE_ENV === 'development') {
       console.time('filter-commands')
     }
 
-    /**
-     * Single-pass filtering with scoring
-     *
-     * Why this is fast:
-     * - We score and filter in one pass (reduce() instead of map+filter)
-     * - We stop early if we have enough results
-     * - We filter out low scores immediately
-     */
+    // Score and filter in single pass
     const scoredCommands: Array<{ command: CommandType; score: number }> = []
 
     for (const cmd of allCommands) {
-      // Calculatee fuzzy match score
       const score = commandScore(cmd.name, deferredQuery)
 
       // Skip low-quality matches early
       if (score < MIN_SCORE_THRESHOLD) continue
 
-      // Add to results
       scoredCommands.push({ command: cmd, score })
-
-      // Optional: Stop early if we have enough results
-      // This is useful for huge command lists
-      // if (scoredCommands.length >= MAX_INITIAL_RESULTS * 2) break
     }
 
     // Sort by score (highest first)
     scoredCommands.sort((a, b) => b.score - a.score)
 
-    // Extract commands (limit to reasonable number)
+    // Limit results
     const results = scoredCommands
       .slice(0, MAX_INITIAL_RESULTS)
       .map(item => item.command)
 
     if (process.env.NODE_ENV === 'development') {
       console.timeEnd('filter-commands')
-      console.log(
-        `Filtered ${allCommands.length} -> ${results.length} commands`
-      )
+      console.log(`Filtered ${allCommands.length} → ${results.length} commands`)
     }
 
     return results
-  }, [deferredQuery, prefixInfo.detected]) // Only re-run when query changes
+  }, [deferredQuery, prefixInfo.detected])
 
   // ============================================
   // RECENT COMMANDS FILTERING
   // ============================================
 
-  /**
-   * Get recent command objects from IDs
-   * Memoized because this involves array operations
-   */
   const recentCommandObjects = useMemo(
     () =>
       recentCommands
@@ -270,9 +261,9 @@ function AppContent({ onClose }: AppContentProps) {
    * Handle prefix-based search
    */
   const handlePrefixSearch = () => {
-    if (!prefixInfo.detected || !prefixInfo.query) return
+    if (!prefixInfo.detected || !prefixInfo.query || !prefixInfo.mapping) return
 
-    const url = prefixInfo.mapping!.urlTemplate.replace(
+    const url = prefixInfo.mapping.urlTemplate.replace(
       '{query}',
       encodeURIComponent(prefixInfo.query)
     )
@@ -296,6 +287,7 @@ function AppContent({ onClose }: AppContentProps) {
     chrome.tabs.update({ url })
     onClose()
   }
+
   // ============================================
   // RENDER
   // ============================================
@@ -308,8 +300,10 @@ function AppContent({ onClose }: AppContentProps) {
       {/* Search input */}
       <CommandInput placeholder="Type a command or search..." autoFocus />
 
-      {/* Prefix hint */}
-      {prefixInfo.detected && <PrefixHint mapping={prefixInfo.mapping!} />}
+      {/* Prefix hint - only show if mapping exists */}
+      {prefixInfo.detected && prefixInfo.mapping && (
+        <PrefixHint mapping={prefixInfo.mapping} />
+      )}
 
       {/* Command list */}
       <CommandList>
@@ -325,16 +319,16 @@ function AppContent({ onClose }: AppContentProps) {
             )}
 
             {/* Prefix search action */}
-            {prefixInfo.detected && prefixInfo.query && (
+            {prefixInfo.detected && prefixInfo.query && prefixInfo.mapping && (
               <CommandItem
                 value={`search-${prefixInfo.prefix}`}
                 onSelect={handlePrefixSearch}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{prefixInfo.mapping?.icon}</span>
+                  <span className="text-2xl">{prefixInfo.mapping.icon}</span>
                   <div className="flex-1">
                     <div className="font-medium text-gray-900 dark:text-gray-100">
-                      Search "{prefixInfo.query}" on {prefixInfo.mapping?.name}
+                      Search "{prefixInfo.query}" on {prefixInfo.mapping.name}
                     </div>
                   </div>
                   <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-700">
@@ -410,10 +404,7 @@ function AppContent({ onClose }: AppContentProps) {
               </div>
             )}
           >
-            <BookmarksPortal
-              query={view.query || ''}
-              onSelect={handleBookmarkSelect}
-            />
+            <BookmarksPortal query={query} onSelect={handleBookmarkSelect} />
           </ErrorBoundary>
         )}
 
@@ -433,10 +424,7 @@ function AppContent({ onClose }: AppContentProps) {
               </div>
             )}
           >
-            <HistoryPortal
-              query={view.query || ''}
-              onSelect={handleHistorySelect}
-            />
+            <HistoryPortal query={query} onSelect={handleHistorySelect} />
           </ErrorBoundary>
         )}
 

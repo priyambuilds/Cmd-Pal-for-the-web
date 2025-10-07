@@ -1,52 +1,53 @@
-import { useSyncExternalStore } from 'react'
-import { useCommandContext } from '@/types/context'
-import { getCommandById } from '@/lib/commands'
+import type { Command } from '@/types/types'
 import CommandItem from './CommandItem'
 
 export interface RecentCommandsProps {
+  commands: Command[]
   onSelect: (commandId: string) => void
 }
 
 /**
  * Shows recently used commands
  */
-export default function RecentCommands({ onSelect }: RecentCommandsProps) {
-  const store = useCommandContext()
-
-  const recentIds = useSyncExternalStore(
-    store.subscribe,
-    () => store.getState().recentCommands
-  )
-
-  // Get full command objects from IDs
-  const recentCommands = recentIds
-    .map(id => getCommandById(id))
-    .filter(Boolean) // remove any that no longer exist
-    .slice(0, 5) // Show max 5
-
-  if (recentCommands.length === 0) return null // Dont show if no recent commands
+export default function RecentCommands({
+  commands,
+  onSelect,
+}: RecentCommandsProps) {
+  if (commands.length === 0) return null
 
   return (
-    <div className="border-b border-gray-200 dark:border-gray-800">
-      <div className="px-4 pt-3 pb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-        ⌚ Recently used
+    <>
+      {/* Section Header */}
+      <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase dark:text-gray-400">
+        Recent
       </div>
-      {recentCommands.map(cmd => (
+
+      {/* Recent Command Items */}
+      {commands.map(cmd => (
         <CommandItem
-          key={cmd!.id}
-          value={cmd!.id}
-          keywords={cmd!.keywords}
-          onSelect={() => onSelect(cmd!.id)}
+          key={cmd.id}
+          value={cmd.id}
+          keywords={cmd.keywords}
+          onSelect={() => onSelect(cmd.id)}
         >
-          <span className="text-xl">{cmd!.icon}</span>
-          <div className="flex-1">
-            <div className="font-medium">{cmd!.name}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {cmd!.description}
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{cmd.icon}</span>
+            <div className="flex-1">
+              <div className="font-medium text-gray-900 dark:text-gray-100">
+                {cmd.name}
+              </div>
+              {cmd.description && (
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {cmd.description}
+                </div>
+              )}
             </div>
           </div>
         </CommandItem>
       ))}
-    </div>
+
+      {/* Divider */}
+      <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
+    </>
   )
 }
