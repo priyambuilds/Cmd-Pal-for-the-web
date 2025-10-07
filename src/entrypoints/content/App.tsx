@@ -23,8 +23,8 @@ export default function App() {
       // Check for Ctrl+K (Windows/Linux) or Cmd+K (Mac)
       if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
         console.log('Ctrl/Cmd+K detected!')
-        e.preventDefault() // Prevent Chrome's default search
-        e.stopPropagation() // Stop event from bubbling
+        e.preventDefault()
+        e.stopPropagation()
         setOpen(prev => !prev)
       }
 
@@ -35,7 +35,6 @@ export default function App() {
       }
     }
 
-    // Add listener to window
     window.addEventListener('keydown', handleKeyDown, { capture: true })
     console.log('Keyboard listener registered')
 
@@ -63,21 +62,38 @@ export default function App() {
 function CommandContent({ onClose }: { onClose: () => void }) {
   const store = useCommandContext()
 
-  // subscribe to current view
+  // Subscribe to current view
   const view = useSyncExternalStore(
     store.subscribe,
     () => store.getState().view
   )
 
+  // ✅ ALWAYS call useEffect at top level (never conditionally!)
+  useEffect(() => {
+    // Only act when in root view
+    if (view.type === 'root') {
+      const { hasPrefix, isInternal, portalId, shouldNavigate } = parsePrefix(
+        view.query
+      )
+
+      // Navigate to internal portal when prefix + space detected
+      if (hasPrefix && isInternal && portalId && shouldNavigate) {
+        store.navigate({
+          type: 'portal',
+          portalId,
+          query: '',
+        })
+      }
+    }
+  }, [view.type, view.query, store])
+
   // Handle command selection
   const handleCommandSelect = (command: CommandType) => {
     if (command.type === 'action') {
-      // Execute action immediately and close
       command.onExecute()
       store.addRecentCommand(command.id)
       onClose()
     } else if (command.type === 'portal') {
-      // navigation to portal view
       store.navigate({
         type: 'portal',
         portalId: command.id,
@@ -87,11 +103,10 @@ function CommandContent({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // ROOT VIEW: Show all commands with search
+  // ========== ROOT VIEW ==========
   if (view.type === 'root') {
     const {
       hasPrefix,
-      prefix,
       searchTerm,
       mapping,
       isInternal,
@@ -99,20 +114,21 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       shouldNavigate,
     } = parsePrefix(view.query)
 
-    // ===== INTERNAL PREFIXES (*, #) =====
-    // Navigate immediately when prefix is typed (even without space)
+    // ----- Internal Prefixes (*, #) -----
     if (hasPrefix && isInternal && portalId && shouldNavigate) {
-      // Navigate to portal with empty query
-      store.navigate({
-        type: 'portal',
-        portalId,
-        query: '', // ✅ Empty query - user will search inside portal
-      })
-      return null // Will re-render as portal view
+      return (
+        <div className="p-8 text-center text-gray-500">
+          <div className="mb-4 text-4xl animate-spin">⏳</div>
+          <p>
+            Opening {portalId === 'search-bookmarks' ? 'Bookmarks' : 'History'}
+            ...
+          </p>
+        </div>
+      )
     }
 
-    // ===== EXTERNAL PREFIXES (!g, !yt, etc.) =====
-    // Show hint when prefix is detected but no space yet
+    // ----- External Prefixes (!g, !yt, etc.) -----
+    // Show hint when prefix typed but no space
     if (hasPrefix && !isInternal && mapping && !shouldNavigate) {
       return (
         <>
@@ -133,14 +149,13 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       )
     }
 
-    // Navigate to external search portal when space is pressed
+    // Show search UI when prefix + space typed
     if (hasPrefix && !isInternal && mapping && shouldNavigate) {
       const searchUrl = mapping.urlTemplate.replace(
         '{query}',
         encodeURIComponent(searchTerm || 'search')
       )
 
-      // If there's a search term, show it
       if (searchTerm) {
         return (
           <>
@@ -180,7 +195,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
           </>
         )
       } else {
-        // Just space pressed, show empty search state
         return (
           <>
             <CommandInput placeholder="Search commands..." autofocus />
@@ -197,9 +211,9 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       }
     }
 
-    // ===== NO PREFIX - NORMAL BEHAVIOR =====
+    // ----- No Prefix - Normal Behavior -----
 
-    // If no query, show suggestions view
+    // Empty query - show suggestions
     if (!view.query) {
       return (
         <>
@@ -218,7 +232,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       )
     }
 
-    // If query exists but no prefix, show filtered commands
+    // Query exists - show filtered commands
     const filteredCommands = allCommands
       .map(cmd => ({
         command: cmd,
@@ -278,7 +292,8 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       </>
     )
   }
-  // PORTAL VIEW: Show portal content
+
+  // ========== PORTAL VIEW ==========
   if (view.type === 'portal') {
     const portal = getCommandById(view.portalId!)
 
@@ -300,7 +315,7 @@ function CommandContent({ onClose }: { onClose: () => void }) {
     )
   }
 
-  // CATEGORY VIEW: Show commands from that category
+  // ========== CATEGORY VIEW ==========
   if (view.type === 'category') {
     const category = getCategoryById(view.categoryId!)
 
@@ -337,5 +352,6 @@ function CommandContent({ onClose }: { onClose: () => void }) {
       </>
     )
   }
+
   return null
 }

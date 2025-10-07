@@ -3,7 +3,7 @@ export interface PrefixMapping {
   name: string
   icon: string
   description: string
-  urlTemplate: string // {query} will be replaced with the search term
+  urlTemplate: string
 }
 
 export const prefixMappings: PrefixMapping[] = [
@@ -79,9 +79,6 @@ export const prefixMappings: PrefixMapping[] = [
   },
 ]
 
-/**
- * Special prefixes that trigger internal portals
- */
 export const internalPrefixes = [
   {
     prefix: '*',
@@ -105,13 +102,15 @@ export function parsePrefix(query: string): {
   mapping: PrefixMapping | null
   isInternal: boolean
   portalId?: string
-  shouldNavigate: boolean // NEW: Should we navigate immediately?
+  shouldNavigate: boolean
 } {
+  // Don't trim! We need to detect the space character
+  const original = query
   const trimmed = query.trim()
 
   // Check external prefixes (e.g., !g, !yt)
   for (const mapping of prefixMappings) {
-    // Check if query is EXACTLY the prefix (user just typed it)
+    // Exactly the prefix
     if (trimmed === mapping.prefix) {
       return {
         hasPrefix: true,
@@ -119,26 +118,26 @@ export function parsePrefix(query: string): {
         searchTerm: '',
         mapping,
         isInternal: false,
-        shouldNavigate: false, // Don't navigate yet, wait for space
+        shouldNavigate: false,
       }
     }
 
-    // Check if query starts with prefix + space
-    if (trimmed.startsWith(mapping.prefix + ' ')) {
+    // Prefix + space
+    if (original.startsWith(mapping.prefix + ' ')) {
       return {
         hasPrefix: true,
         prefix: mapping.prefix,
-        searchTerm: trimmed.slice(mapping.prefix.length + 1).trim(),
+        searchTerm: original.slice(mapping.prefix.length + 1).trim(),
         mapping,
         isInternal: false,
-        shouldNavigate: true, // Navigate to external search
+        shouldNavigate: true,
       }
     }
   }
 
   // Check internal prefixes (e.g., *, #)
   for (const internal of internalPrefixes) {
-    // Check if query is EXACTLY the prefix
+    // Exactly the prefix
     if (trimmed === internal.prefix) {
       return {
         hasPrefix: true,
@@ -147,21 +146,29 @@ export function parsePrefix(query: string): {
         mapping: null,
         isInternal: true,
         portalId: internal.portalId,
-        shouldNavigate: false, // Don't navigate yet
+        shouldNavigate: false,
       }
     }
 
-    // Check if query starts with prefix (with or without space)
-    if (trimmed.startsWith(internal.prefix)) {
-      const afterPrefix = trimmed.slice(internal.prefix.length).trim()
-      return {
-        hasPrefix: true,
-        prefix: internal.prefix,
-        searchTerm: afterPrefix,
-        mapping: null,
-        isInternal: true,
-        portalId: internal.portalId,
-        shouldNavigate: true, // Navigate immediately to portal
+    // Check for space after prefix using original query
+    if (
+      original.startsWith(internal.prefix + ' ') ||
+      (original.length > internal.prefix.length &&
+        original.startsWith(internal.prefix))
+    ) {
+      const afterPrefix = original.slice(internal.prefix.length)
+
+      // If there's a space or more characters, navigate
+      if (afterPrefix.length > 0) {
+        return {
+          hasPrefix: true,
+          prefix: internal.prefix,
+          searchTerm: afterPrefix.trim(),
+          mapping: null,
+          isInternal: true,
+          portalId: internal.portalId,
+          shouldNavigate: true, // Navigate!
+        }
       }
     }
   }
