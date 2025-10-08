@@ -26,7 +26,6 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Paths/Aliases (match wxt.config.ts alias) */
-    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],

@@ -5,8 +5,8 @@ import {
   useMemo,
   useDeferredValue,
 } from 'react'
-import CommandInput from '@/components/CommandInput'
 import Command from '@/components/Command'
+import CommandInput from '@/components/CommandInput'
 import CommandList from '@/components/CommandList'
 import CommandItem from '@/components/CommandItem'
 import CommandEmpty from '@/components/CommandEmpty'
@@ -23,6 +23,11 @@ import PrefixHint from '@/components/PrefixHint'
 import BookmarksPortal from '@/components/portals/BookmarksPortal'
 import HistoryPortal from '@/components/portals/HistoryPortal'
 
+// ============================================
+// Command Context Provider
+// Provides store context for all command components
+// ============================================
+
 /**
  * Minimum score threshold for fuzzy search results
  * Lower = more lenient matching, Higher = stricter matching
@@ -36,51 +41,14 @@ const MIN_SCORE_THRESHOLD = 0.1
 const MAX_INITIAL_RESULTS = 50
 
 /**
- * Main App Component - Command Palette Modal
+ * Main App Component - Command Palette Modal Content
  *
  * This component handles:
- * - Global keyboard shortcuts (Cmd/Ctrl+K)
- * - Modal open/close state
+ * - Modal content (always visible when rendered)
  * - Global error boundary
+ * - Command palette logic and navigation
  */
 export default function App() {
-  const [open, setOpen] = useState(false)
-
-  // ============================================
-  // KEYBOARD SHORTCUTS
-  // ============================================
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + K: Toggle command palette
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        e.stopPropagation()
-        setOpen(prev => !prev)
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🎹 Command Palette toggled:', !open)
-        }
-      }
-
-      // Escape: Close palette when open
-      if (e.key === 'Escape' && open) {
-        e.preventDefault()
-        setOpen(false)
-      }
-    }
-
-    // Use capture phase to catch events before they bubble
-    window.addEventListener('keydown', handleKeyDown, { capture: true })
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true })
-    }
-  }, [open])
-
-  // Don't render anything when closed
-  if (!open) return null
-
   return (
     <ErrorBoundary
       isolationLevel="global"
@@ -89,18 +57,12 @@ export default function App() {
         console.error('Component stack:', errorInfo.componentStack)
       }}
     >
-      {/* Modal Overlay */}
-      <div
-        className="fixed inset-0 z-50 flex items-start justify-center px-4 bg-black/50 backdrop-blur-sm pt-[20vh]"
-        onClick={() => setOpen(false)}
-      >
-        {/* Modal Content */}
-        <div
-          className="w-full max-w-2xl overflow-hidden bg-white rounded-lg shadow-2xl dark:bg-gray-800"
-          onClick={e => e.stopPropagation()}
-        >
+      {/* Modal Overlay - Full screen dark background */}
+      <div className="fixed inset-0 z-50 flex items-start justify-center px-4 bg-black/50 backdrop-blur-sm pt-[20vh]">
+        {/* Modal Content - White rounded container */}
+        <div className="w-full max-w-2xl overflow-hidden bg-white rounded-lg shadow-2xl dark:bg-gray-800">
           <Command label="Command Palette" loop>
-            <AppContent onClose={() => setOpen(false)} />
+            <AppContent />
           </Command>
         </div>
       </div>
@@ -116,10 +78,10 @@ export default function App() {
  * - AppContent handles command logic and rendering
  */
 interface AppContentProps {
-  onClose: () => void
+  onClose?: () => void
 }
 
-function AppContent({ onClose }: AppContentProps) {
+function AppContent({ onClose }: AppContentProps = {}) {
   const store = useCommandContext()
 
   // ============================================
@@ -237,7 +199,7 @@ function AppContent({ onClose }: AppContentProps) {
       if (command.type === 'action' && command.onExecute) {
         await command.onExecute()
         // Close palette after action
-        onClose()
+        onClose?.()
       } else if (command.type === 'category') {
         // Navigate to category view
         const currentView = store.getState().view

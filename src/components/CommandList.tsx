@@ -53,8 +53,10 @@ export default function CommandList({
     () => store.getState().activeId
   )
 
-  // keyboard navigation handler
+  // keyboard navigation handler - only active when list is open
   useEffect(() => {
+    if (!open) return
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const state = store.getState()
 
@@ -125,20 +127,19 @@ export default function CommandList({
         case 'Escape': {
           e.preventDefault()
 
-          // If there's a query, clear it
-          // Otherwise, close the palette (handled by parent)
+          // Only clear query if there's one
+          // Let parent (App) handle closing the modal
           const currentView = state.view
           if (currentView.query) {
-            // ✅ Use view.query instead
             store.setState({
               view: {
                 ...currentView,
                 query: '',
               },
-              open: false,
               activeId: null,
             })
           }
+          // If no query, let the event bubble up to close modal
           break
         }
       }

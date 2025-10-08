@@ -1,4 +1,10 @@
-import { useId, useSyncExternalStore, useRef, useCallback } from 'react'
+import {
+  useId,
+  useSyncExternalStore,
+  useRef,
+  useCallback,
+  useEffect,
+} from 'react'
 import { useCommandContext } from '@/types/context'
 
 export interface CommandInputProps {
@@ -107,23 +113,16 @@ export default function CommandInput({
     [store]
   )
 
-  /**
-   * Auto-focus when palette opens
-   */
-  const handleFocus = useCallback(() => {
-    if (autoFocus && inputRef.current && open) {
+  // FIX 2: Proper auto-focus handling without memory leaks
+  // Use useEffect for side effects instead of useSyncExternalStore misuse
+  useEffect(() => {
+    if (autoFocus && inputRef.current && open && !query) {
       // Use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => {
         inputRef.current?.focus()
       })
     }
-  }, [autoFocus, open])
-
-  // Focus input when palette opens
-  useSyncExternalStore(store.subscribe, () => {
-    handleFocus()
-    return open
-  })
+  }, [open, autoFocus])
 
   return (
     <div className="relative flex items-center border-b border-gray-200 dark:border-gray-800">
