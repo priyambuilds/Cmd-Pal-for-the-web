@@ -1,407 +1,205 @@
-import {
-  useState,
-  useEffect,
-  useSyncExternalStore,
-  useMemo,
-  useDeferredValue,
-} from 'react'
-import Command from '@/components/Command'
-import CommandInput from '@/components/CommandInput'
-import CommandList from '@/components/CommandList'
-import CommandItem from '@/components/CommandItem'
-import CommandEmpty from '@/components/CommandEmpty'
-import BackButton from '@/components/BackButton'
-import ErrorBoundary from '@/components/ErrorBoundary'
-import { useCommandContext } from '@/types/context'
-import { allCommands, getCommandById } from '@/lib/commands'
-import { type Command as CommandType } from '@/types/types'
-import commandScore from 'command-score'
-import CategoryList from '@/components/CategoryList'
-import RecentCommands from '@/components/RecentCommands'
-import { parsePrefix } from '@/lib/prefixes'
-import PrefixHint from '@/components/PrefixHint'
-import BookmarksPortal from '@/components/portals/BookmarksPortal'
-import HistoryPortal from '@/components/portals/HistoryPortal'
+// entrypoints/content/App.tsx
 
-// ============================================
-// Command Context Provider
-// Provides store context for all command components
-// ============================================
+import { useState, useEffect } from 'react'
+import { Command } from '@/components/command/Command'
+import { CommandInput } from '@/components/command/CommandInput'
+import { CommandList } from '@/components/command/CommandList'
+import { CommandItem } from '@/components/command/CommandItem'
+import { CommandGroup } from '@/components/command/CommandGroup'
+import { CommandEmpty } from '@/components/command/CommandEmpty'
+// import { CommandLoading } from '@/components/command/CommandLoading'
+import { CommandSeparator } from '@/components/command/CommandSeparator'
+import { CommandDialog } from '@/components/command/CommandDialog'
 
-/**
- * Minimum score threshold for fuzzy search results
- * Lower = more lenient matching, Higher = stricter matching
- */
-const MIN_SCORE_THRESHOLD = 0.1
-
-/**
- * Maximum number of results to show
- * Keeps UI snappy by limiting DOM nodes
- */
-const MAX_INITIAL_RESULTS = 50
-
-/**
- * Main App Component - Command Palette Modal Content
- *
- * This component handles:
- * - Modal content (always visible when rendered)
- * - Global error boundary
- * - Command palette logic and navigation
- */
 export default function App() {
-  return (
-    <ErrorBoundary
-      isolationLevel="global"
-      onError={(error, errorInfo) => {
-        console.error('💥 App-level error:', error)
-        console.error('Component stack:', errorInfo.componentStack)
-      }}
-    >
-      {/* Modal Overlay - Full screen dark background */}
-      <div className="fixed inset-0 z-50 flex items-start justify-center px-4 bg-black/50 backdrop-blur-sm pt-[20vh]">
-        {/* Modal Content - White rounded container */}
-        <div className="w-full max-w-2xl overflow-hidden bg-white rounded-lg shadow-2xl dark:bg-gray-800">
-          <Command label="Command Palette" loop>
-            <AppContent />
-          </Command>
-        </div>
-      </div>
-    </ErrorBoundary>
-  )
-}
+  const [open, setOpen] = useState(false)
 
-/**
- * AppContent Component - Main palette logic
- *
- * Separated from App for cleaner architecture:
- * - App handles modal state and shortcuts
- * - AppContent handles command logic and rendering
- */
-interface AppContentProps {
-  onClose?: () => void
-}
-
-function AppContent({ onClose }: AppContentProps = {}) {
-  const store = useCommandContext()
-
-  // ============================================
-  // SUBSCRIBE TO STORE STATE
-  // ============================================
-
-  const view = useSyncExternalStore(
-    store.subscribe,
-    () => store.getState().view
-  )
-
-  const recentCommands = useSyncExternalStore(
-    store.subscribe,
-    () => store.getState().recentCommands
-  )
-
-  // ============================================
-  // PERFORMANCE OPTIMIZATION: DEFERRED QUERY
-  // ============================================
-
-  /**
-   * Safe access to query with fallback
-   * view.query is optional, so we default to empty string
-   */
-  const query = view.query ?? ''
-  const deferredQuery = useDeferredValue(query)
-
-  // ============================================
-  // PREFIX PARSING
-  // ============================================
-
-  const prefixInfo = useMemo(() => parsePrefix(deferredQuery), [deferredQuery])
-
-  // ============================================
-  // COMMAND FILTERING (OPTIMIZED)
-  // ============================================
-
-  /**
-   * Filter and score commands based on query
-   *
-   * Performance optimizations:
-   * 1. Uses deferredQuery (runs in React idle time)
-   * 2. Early return for empty query
-   * 3. Single-pass scoring and filtering
-   * 4. Score threshold to skip poor matches
-   * 5. Limited results to reduce DOM nodes
-   */
-  const filteredCommands = useMemo(() => {
-    // No query or prefix detected - show all commands
-    if (!deferredQuery || prefixInfo.detected) {
-      return allCommands
-    }
-
-    // Development performance tracking
-    if (process.env.NODE_ENV === 'development') {
-      console.time('filter-commands')
-    }
-
-    // Score and filter in single pass
-    const scoredCommands: Array<{ command: CommandType; score: number }> = []
-
-    for (const cmd of allCommands) {
-      const score = commandScore(cmd.name, deferredQuery)
-
-      // Skip low-quality matches early
-      if (score < MIN_SCORE_THRESHOLD) continue
-
-      scoredCommands.push({ command: cmd, score })
-    }
-
-    // Sort by score (highest first)
-    scoredCommands.sort((a, b) => b.score - a.score)
-
-    // Limit results
-    const results = scoredCommands
-      .slice(0, MAX_INITIAL_RESULTS)
-      .map(item => item.command)
-
-    if (process.env.NODE_ENV === 'development') {
-      console.timeEnd('filter-commands')
-      console.log(`Filtered ${allCommands.length} → ${results.length} commands`)
-    }
-
-    return results
-  }, [deferredQuery, prefixInfo.detected])
-
-  // ============================================
-  // RECENT COMMANDS FILTERING
-  // ============================================
-
-  const recentCommandObjects = useMemo(
-    () =>
-      recentCommands
-        .map(id => getCommandById(id))
-        .filter((cmd): cmd is CommandType => cmd !== null),
-    [recentCommands]
-  )
-
-  // ============================================
-  // EVENT HANDLERS
-  // ============================================
-
-  /**
-   * Handle command selection
-   */
-  const handleCommandSelect = async (commandId: string) => {
-    const command = getCommandById(commandId)
-    if (!command) return
-
-    try {
-      // Add to recent commands
-      await store.addRecentCommand(commandId)
-
-      // Execute based on command type
-      if (command.type === 'action' && command.onExecute) {
-        await command.onExecute()
-        // Close palette after action
-        onClose?.()
-      } else if (command.type === 'category') {
-        // Navigate to category view
-        const currentView = store.getState().view
-        const history = store.getState().history
-
-        store.setState({
-          view: {
-            type: 'category',
-            categoryId: commandId,
-            query: '',
-          },
-          history: [...history, currentView],
-        })
+  // Setup Ctrl+K / Cmd+K keyboard shortcut
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setOpen(open => !open)
       }
-    } catch (error) {
-      console.error('Failed to execute command:', error)
     }
+
+    document.addEventListener('keydown', down)
+    return () => document.removeEventListener('keydown', down)
+  }, [])
+
+  // Handle item selection
+  const handleSelect = (value: string) => {
+    console.log('Selected:', value)
+
+    // Execute actions based on selected item
+    switch (value) {
+      case 'github':
+        window.open('https://github.com', '_blank')
+        break
+      case 'google':
+        window.open('https://google.com', '_blank')
+        break
+      case 'current-url':
+        navigator.clipboard.writeText(window.location.href)
+        alert('URL copied to clipboard!')
+        break
+      case 'scroll-top':
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        break
+      case 'scroll-bottom':
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+        break
+    }
+
+    // Close dialog after selection
+    setOpen(false)
   }
-
-  /**
-   * Handle prefix-based search
-   */
-  const handlePrefixSearch = () => {
-    if (!prefixInfo.detected || !prefixInfo.query || !prefixInfo.mapping) return
-
-    const url = prefixInfo.mapping.urlTemplate.replace(
-      '{query}',
-      encodeURIComponent(prefixInfo.query)
-    )
-
-    chrome.tabs.create({ url })
-    onClose()
-  }
-
-  /**
-   * Handle bookmark selection
-   */
-  const handleBookmarkSelect = (url: string) => {
-    chrome.tabs.update({ url })
-    onClose()
-  }
-
-  /**
-   * Handle history selection
-   */
-  const handleHistorySelect = (url: string) => {
-    chrome.tabs.update({ url })
-    onClose()
-  }
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   return (
     <>
-      {/* Back button for navigation */}
-      <BackButton />
+      {/* Use Command instead of CommandDialog for debugging */}
+      <Command
+        open={open}
+        onOpenChange={setOpen}
+        // Disable filtering temporarily to see all items
+        config={{ filter: false }}
+      >
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '90%',
+            maxWidth: '640px',
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+            zIndex: 10000,
+            overflow: 'hidden',
+            display: open ? 'block' : 'none',
+          }}
+        >
+          <CommandInput
+            placeholder="Type a command or search..."
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              border: 'none',
+              borderBottom: '1px solid #e5e7eb',
+              fontSize: '16px',
+              outline: 'none',
+            }}
+          />
 
-      {/* Search input */}
-      <CommandInput placeholder="Type a command or search..." autoFocus />
-
-      {/* Prefix hint - only show if mapping exists */}
-      {prefixInfo.detected && prefixInfo.mapping && (
-        <PrefixHint mapping={prefixInfo.mapping} />
-      )}
-
-      {/* Command list */}
-      <CommandList>
-        {/* ROOT VIEW */}
-        {view.type === 'root' && (
-          <>
-            {/* Recent commands (only when no query) */}
-            {!deferredQuery && recentCommandObjects.length > 0 && (
-              <RecentCommands
-                commands={recentCommandObjects}
-                onSelect={handleCommandSelect}
-              />
-            )}
-
-            {/* Prefix search action */}
-            {prefixInfo.detected && prefixInfo.query && prefixInfo.mapping && (
-              <CommandItem
-                value={`search-${prefixInfo.prefix}`}
-                onSelect={handlePrefixSearch}
+          <CommandList
+            style={{
+              maxHeight: '400px',
+              overflowY: 'auto',
+              padding: '8px',
+            }}
+          >
+            <CommandEmpty>
+              <div
+                style={{
+                  padding: '24px',
+                  textAlign: 'center',
+                  color: '#6b7280',
+                }}
               >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{prefixInfo.mapping.icon}</span>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900 dark:text-gray-100">
-                      Search "{prefixInfo.query}" on {prefixInfo.mapping.name}
-                    </div>
-                  </div>
-                  <kbd className="px-2 py-1 text-xs bg-gray-100 rounded dark:bg-gray-700">
-                    ↵
-                  </kbd>
-                </div>
+                No results found.
+              </div>
+            </CommandEmpty>
+
+            <CommandGroup heading="Quick Actions">
+              <CommandItem
+                value="github"
+                onSelect={handleSelect}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                }}
+              >
+                🚀 Open GitHub
               </CommandItem>
-            )}
+              <CommandItem
+                value="google"
+                onSelect={handleSelect}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                }}
+              >
+                🔍 Open Google
+              </CommandItem>
+              <CommandItem
+                value="current-url"
+                onSelect={handleSelect}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                }}
+              >
+                📋 Copy Current URL
+              </CommandItem>
+            </CommandGroup>
 
-            {/* Regular filtered commands */}
-            {!prefixInfo.detected &&
-              filteredCommands.map(cmd => (
-                <CommandItem
-                  key={cmd.id}
-                  value={cmd.id}
-                  keywords={cmd.keywords}
-                  onSelect={handleCommandSelect}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{cmd.icon}</span>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {cmd.name}
-                      </div>
-                      {cmd.description && (
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {cmd.description}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-          </>
-        )}
-
-        {/* CATEGORY VIEW */}
-        {view.type === 'category' && view.categoryId && (
-          <ErrorBoundary
-            isolationLevel="component"
-            fallback={(error, reset) => (
-              <div className="p-6 text-center">
-                <p className="mb-3 text-red-500">Failed to load category</p>
-                <button
-                  onClick={reset}
-                  className="text-blue-500 hover:text-blue-600"
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-          >
-            <CategoryList
-              categoryId={view.categoryId}
-              onSelect={handleCommandSelect}
+            <CommandSeparator
+              style={{
+                height: '1px',
+                backgroundColor: '#e5e7eb',
+                margin: '8px 0',
+              }}
             />
-          </ErrorBoundary>
-        )}
 
-        {/* PORTAL VIEW: Bookmarks */}
-        {view.type === 'portal' && view.portalId === 'search-bookmarks' && (
-          <ErrorBoundary
-            isolationLevel="component"
-            fallback={(error, reset) => (
-              <div className="p-6 text-center">
-                <p className="mb-3 text-red-500">Failed to load bookmarks</p>
-                <button
-                  onClick={reset}
-                  className="text-blue-500 hover:text-blue-600"
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-          >
-            <BookmarksPortal query={query} onSelect={handleBookmarkSelect} />
-          </ErrorBoundary>
-        )}
+            <CommandGroup heading="Navigation">
+              <CommandItem
+                value="scroll-top"
+                onSelect={handleSelect}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                }}
+              >
+                ⬆️ Scroll to Top
+              </CommandItem>
+              <CommandItem
+                value="scroll-bottom"
+                onSelect={handleSelect}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                }}
+              >
+                ⬇️ Scroll to Bottom
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </div>
+      </Command>
 
-        {/* PORTAL VIEW: History */}
-        {view.type === 'portal' && view.portalId === 'search-history' && (
-          <ErrorBoundary
-            isolationLevel="component"
-            fallback={(error, reset) => (
-              <div className="p-6 text-center">
-                <p className="mb-3 text-red-500">Failed to load history</p>
-                <button
-                  onClick={reset}
-                  className="text-blue-500 hover:text-blue-600"
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-          >
-            <HistoryPortal query={query} onSelect={handleHistorySelect} />
-          </ErrorBoundary>
-        )}
-
-        {/* Empty state */}
-        <CommandEmpty>
-          <div className="py-12 text-center">
-            <p className="mb-2 text-gray-500 dark:text-gray-400">
-              No results found
-            </p>
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              Try using a prefix like !g, !p, or !yt
-            </p>
-          </div>
-        </CommandEmpty>
-      </CommandList>
+      {/* Overlay */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 9999,
+          }}
+        />
+      )}
     </>
   )
 }
