@@ -13,7 +13,6 @@ User types in input
   → Store updates search results
   → Components re-render with new results
  */
-
 /**
 Why So Many useEffects?
 

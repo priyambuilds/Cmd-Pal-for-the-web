@@ -1,5 +1,3 @@
-// src/types/index.ts
-
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 
 // =============================================================================
@@ -83,11 +81,92 @@ export interface SearchState {
 export interface CommandConfig {
   filter?: boolean // Enable/disable filtering (default: true)
   filterFn?: ((item: CommandItem, query: string) => boolean) | undefined // Custom filter
-  debounceMs?: number // Wait time before searching (default: 150ms)
+  debounceMs?: number // Wait time after typing before searching (default: 150ms)
   maxResults?: number // Limit displayed results (default: 50)
   keyboard?: boolean // Enable keyboard navigation (default: true)
-  loop?: boolean // Loop to start when reaching end (default: true)
-  caseSensitive?: boolean // Case sensitive search (default: false)
+  loop?: boolean // Loop from bottom to top and vice versa (default: true)
+  caseSensitive?: boolean // Case-insensitive by default (default: false)
+
+  // Advanced features
+  asyncLoader?: (query: string) => Promise<CommandItem[]> // Async data loading
+  loaderDebounceMs?: number // Separate debounce for async loading
+  customScoring?: (item: CommandItem, query: string) => number // Custom scoring function
+  recentBoost?: number // Boost for recently used items (default: 1.2)
+  frequencyBoost?: boolean // Boost frequently used items
+  keyboardShortcuts?: KeyboardShortcutConfig // Custom keyboard shortcuts
+  cache?: CacheConfig // Caching configuration
+  workers?: WorkerConfig // Web worker configuration
+}
+
+/**
+ * Advanced scoring configuration
+ */
+export interface AdvancedScoringConfig {
+  boostRecent?: number // Multiplier for recently used items
+  boostFrequency?: boolean // Enable frequency-based boosting
+  customAlgorithm?: (item: CommandItem, query: string) => number
+  recentDecayMs?: number // How old items lose "recent" status (default: 24 hours)
+}
+
+/**
+ * Custom keyboard shortcuts configuration
+ */
+export interface KeyboardShortcutConfig {
+  navigateUp?: string[] // Default: ['ArrowUp']
+  navigateDown?: string[] // Default: ['ArrowDown']
+  navigateUpAlt?: string[] // Alt+up for groups, default: ['Alt+ArrowUp']
+  navigateDownAlt?: string[] // Alt+down for groups, default: ['Alt+ArrowDown']
+  select?: string[] // Default: ['Enter']
+  close?: string[] // Default: ['Escape']
+  clear?: string[] // Clear search, default: ['Escape'] (when no selection)
+}
+
+/**
+ * Caching configuration for performance
+ */
+export interface CacheConfig {
+  enabled?: boolean // Enable caching (default: false)
+  maxSize?: number // Max cached items (default: 1000)
+  ttl?: number // Time to live in ms (default: 1 hour)
+  persist?: boolean // Persist across sessions (needs IndexedDB)
+}
+
+/**
+ * Web worker configuration for heavy computations
+ */
+export interface WorkerConfig {
+  enabled?: boolean // Enable workers (default: false)
+  scoringWorker?: boolean // Move scoring to worker
+  minItems?: number // Min items before using worker (default: 1000)
+}
+
+/**
+ * Render customization options
+ */
+export interface RenderConfig {
+  renderItem?: (item: CommandItem, state: ItemRenderState) => ReactNode
+  renderGroup?: (group: CommandGroup, state: GroupRenderState) => ReactNode
+  renderEmpty?: (query: string) => ReactNode
+  renderLoading?: (progress?: number) => ReactNode
+  renderInput?: (props: InputProps) => ReactNode
+}
+
+/**
+ * Item render state
+ */
+export interface ItemRenderState {
+  isSelected: boolean
+  isVisible: boolean
+  index: number
+}
+
+/**
+ * Group render state
+ */
+export interface GroupRenderState {
+  hasVisibleItems: boolean
+  visibleCount: number
+  isCollapsed?: boolean
 }
 
 /**

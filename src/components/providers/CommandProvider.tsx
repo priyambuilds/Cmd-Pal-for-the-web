@@ -46,7 +46,9 @@ interface CommandContextValue {
  * We use null to force consumers to check if they're inside a provider.
  * This catches mistakes at runtime with a helpful error message.
  */
-const CommandContext = createContext<CommandContextValue | null>(null)
+export const CommandContext = createContext<CommandContextValue | undefined>(
+  undefined
+)
 
 /**
  * Hook to access command context
@@ -81,7 +83,6 @@ export function useCommandContext(): CommandContextValue {
  * Export the context for direct Provider access
  * Components typically use useCommandContext() instead
  */
-export { CommandContext }
 
 /**
  * CommandProvider - Convenience wrapper component

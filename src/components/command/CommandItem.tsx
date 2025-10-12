@@ -25,6 +25,7 @@ export function CommandItem({
   const { addItem, removeItem } = useCommandItems()
   const { selectItem } = useCommandStore()
   const selectedItem = useCommandSelection()
+  const searchResults = useCommandResults()
 
   // Use ref to track if already registered
   const registeredRef = useRef(false)
@@ -52,6 +53,10 @@ export function CommandItem({
 
   const isSelected = selectedItem?.id === value
 
+  // Check if this item should be visible in current search results
+  const isVisible =
+    forceMount || searchResults.some(result => result.id === value)
+
   const handleSelect = useCallback(() => {
     if (disabled) return
     selectItem(value)
@@ -71,6 +76,11 @@ export function CommandItem({
       selectItem(value)
     }
   }, [disabled, isSelected, selectItem, value])
+
+  // Don't render if not visible (filtered out) - AFTER all hooks are called
+  if (!isVisible) {
+    return null
+  }
 
   const itemId = `${context.id}-item-${value}`
 

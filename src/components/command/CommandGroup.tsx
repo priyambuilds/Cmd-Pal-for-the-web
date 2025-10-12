@@ -52,56 +52,35 @@ export function CommandGroup({
   const groupId = value || (typeof heading === 'string' ? heading : 'group')
 
   /**
-   * Check if group has any visible items
-   *
-   * We need to check if any child CommandItem is in the
-   * current search results. If no items are visible, we
-   * hide the entire group (unless forceMount is true).
+   * Check if group has any visible items by finding child components with 'value' prop that match search results
+   * This walks through React children and assumes any element with a 'value' prop is a CommandItem
    */
   const hasVisibleItems = useMemo(() => {
     if (forceMount) return true
 
-    // Count visible children
-    let visibleCount = 0
+    // Walk through children to find elements with value prop (CommandItems) and check if they're in results
+    const findVisibleItems = (children: any): boolean => {
+      if (!children) return false
 
-    // Walk through children to find CommandItems
-    const countVisibleChildren = (child: any): void => {
-      if (!child) return
-
-      // handle arrays of childres
-      if (Array.isArray(child)) {
-        child.forEach(countVisibleChildren)
-        return
+      if (Array.isArray(children)) {
+        return children.some(findVisibleItems)
       }
 
-      // Check if it's a valid react element
-      if (typeof child === 'object' && child.props) {
-        // Check if it's a CommandItem by checking for 'value' prop
-        // (CommandItem always has a value prop)
-        if (child.props.value) {
-          const itemValue = child.props.value
-          const isVisible = results.some(result => result.id === itemValue)
-          if (isVisible) visibleCount++
-        }
-
-        // recursively check children
-        if (child.props.children) {
-          countVisibleChildren(child.props.children)
-        }
+      // Check if this element has a value prop (assumed to be CommandItem)
+      if (children?.props?.value) {
+        return results.some(result => result.id === children.props.value)
       }
+
+      // Recursively check nested children
+      if (children?.props?.children) {
+        return findVisibleItems(children.props.children)
+      }
+
+      return false
     }
-    countVisibleChildren(children)
 
-    return visibleCount > 0
+    return findVisibleItems(children)
   }, [children, results, forceMount])
-
-  /**
-   * Don't render if group is empty
-   * (unless forceMount is enabled)
-   */
-  if (!hasVisibleItems && !forceMount) {
-    return null
-  }
 
   /**
    * Generate heading ID for accessibility
@@ -118,7 +97,7 @@ export function CommandGroup({
       className={className}
       data-command-group={groupId}
     >
-      {heading && (
+      {heading && hasVisibleItems && (
         <div
           id={headingId}
           role="presentation"

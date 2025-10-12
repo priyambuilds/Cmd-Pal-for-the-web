@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Primitive } from '@radix-ui/react-primitive'
 import {
   useCommandResults,
@@ -40,7 +40,7 @@ export function CommandList({
   ...props
 }: CommandListProps) {
   const context = useCommandContext()
-  const reuslts = useCommandResults()
+  const results = useCommandResults()
   const selectedItem = useCommandSelection()
   const listRef = useRef<HTMLDivElement>(null)
   const scheduler = getScheduler()
@@ -65,7 +65,7 @@ export function CommandList({
 
         // Find the selected item's DOM element
         const selectedElement = listRef.current.querySelector(
-          `[data-command-item-id="${selectedItem.id}"]`
+          `[data-command-item="${selectedItem.id}"]`
         ) as HTMLElement
 
         if (!selectedElement) return

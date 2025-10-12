@@ -28,11 +28,14 @@ let globalStore: ModernCommandStore | null = null
 
 /**
  * Get or create the global store
- * Only creates once, subsequent calls return the same instance
+ * Only creates once, then updates config on subsequent calls
  */
 function getGlobalStore(config?: Partial<CommandConfig>): ModernCommandStore {
   if (!globalStore) {
     globalStore = createCommandStore(config)
+  } else if (config) {
+    // Update config if store exists but new config provided
+    globalStore.updateConfig(config)
   }
   return globalStore
 }

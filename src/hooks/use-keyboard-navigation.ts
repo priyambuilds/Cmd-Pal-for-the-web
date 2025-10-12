@@ -70,6 +70,30 @@ export function useKeyboardNavigation(): UseKeyboardNavigation {
   }, [navigateSelection])
 
   /**
+   * Helper to check if keyboard shortcut matches
+   */
+  const matchesShortcut = useCallback(
+    (shortcut: string[], event: KeyboardEvent): boolean => {
+      const modifiers = []
+
+      if (event.ctrlKey) modifiers.push('Control')
+      if (event.altKey) modifiers.push('Alt')
+      if (event.shiftKey) modifiers.push('Shift')
+      if (event.metaKey) modifiers.push('Meta')
+
+      const key = event.key === ' ' ? 'Space' : event.key
+      const fullShortcut = [...modifiers, key]
+
+      return shortcut.every(part =>
+        fullShortcut.some(
+          shortcutPart => shortcutPart.toLowerCase() === part.toLowerCase()
+        )
+      )
+    },
+    []
+  )
+
+  /**
    * Main keyboard event handler
    * This is where all the magic happens!
    */
@@ -78,63 +102,125 @@ export function useKeyboardNavigation(): UseKeyboardNavigation {
       // Check if keyboard navigation is enabled
       if (!config.keyboard) return
 
-      // Get the key that was pressed
-      const key = event.key
+      // Check if IME composition is active (prevents interfering with IME)
+      if (
+        (event as any).nativeEvent?.isComposing ||
+        (event as any).keyCode === 229
+      ) {
+        return
+      }
 
-      // Define which keys we handle
-      const isNavigationKey =
-        key === 'ArrowUp' ||
-        key === 'ArrowDown' ||
-        key === 'Home' ||
-        key === 'End' ||
-        key === 'Enter' ||
-        (key === 'j' && event.ctrlKey) || // Vim: Ctrl+J = down
-        (key === 'k' && event.ctrlKey) // Vim: Ctrl+K = up
+      const shortcuts = config.keyboardShortcuts || {}
+      let handled = false
 
-      // Only handle our keys (let other keys work normally)
-      if (!isNavigationKey) return
+      // Check all possible shortcuts
+      if (
+        shortcuts.navigateUp &&
+        matchesShortcut(shortcuts.navigateUp, event)
+      ) {
+        selectPrevious()
+        handled = true
+      } else if (
+        shortcuts.navigateDown &&
+        matchesShortcut(shortcuts.navigateDown, event)
+      ) {
+        selectNext()
+        handled = true
+      } else if (
+        shortcuts.navigateUpAlt &&
+        matchesShortcut(shortcuts.navigateUpAlt, event)
+      ) {
+        // Group navigation not implemented in store yet
+        // navigateSelection('group:prev')
+        handled = true
+      } else if (
+        shortcuts.navigateDownAlt &&
+        matchesShortcut(shortcuts.navigateDownAlt, event)
+      ) {
+        // Group navigation not implemented in store yet
+        // navigateSelection('group:next')
+        handled = true
+      } else if (shortcuts.select && matchesShortcut(shortcuts.select, event)) {
+        selectCurrent()
+        handled = true
+      } else if (shortcuts.clear && matchesShortcut(shortcuts.clear, event)) {
+        // Clear search (useful if Escape isn't clearing)
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }))
+        handled = true
+      }
+      // Handle basic navigation keys (backward compatibility)
+      else if (!handled) {
+        const key = event.key
 
-      // Prevent default browser behavior
-      // (e.g., arrow keys scrolling the page)
-      event.preventDefault()
+        const isNavigationKey =
+          key === 'ArrowUp' ||
+          key === 'ArrowDown' ||
+          key === 'Home' ||
+          key === 'End' ||
+          key === 'Enter' ||
+          (key === 'j' && event.ctrlKey) || // Vim: Ctrl+J = down
+          (key === 'k' && event.ctrlKey) // Vim: Ctrl+K = up
 
-      // Handle each key
-      switch (key) {
-        case 'ArrowUp':
-          selectPrevious()
-          break
+        if (!isNavigationKey) return
 
-        case 'ArrowDown':
-          selectNext()
-          break
+        // Prevent default browser behavior
+        event.preventDefault()
 
-        case 'Home':
-          navigateSelection('first')
-          break
+        // Handle each key
+        switch (key) {
+          case 'ArrowUp':
+            if (event.altKey) {
+              // Alt+ArrowUp for group navigation (not implemented in store yet)
+              selectPrevious() // Fallback to regular navigation
+            } else {
+              selectPrevious()
+            }
+            break
 
-        case 'End':
-          navigateSelection('last')
-          break
+          case 'ArrowDown':
+            if (event.altKey) {
+              // Alt+ArrowDown for group navigation (not implemented in store yet)
+              selectNext() // Fallback to regular navigation
+            } else {
+              selectNext()
+            }
+            break
 
-        case 'Enter':
-          selectCurrent()
-          break
+          case 'Home':
+            navigateSelection('first')
+            break
 
-        case 'j':
-          if (event.ctrlKey) selectNext() // Vim-style
-          break
+          case 'End':
+            navigateSelection('last')
+            break
 
-        case 'k':
-          if (event.ctrlKey) selectPrevious() // Vim-style
-          break
+          case 'Enter':
+            selectCurrent()
+            break
+
+          case 'j':
+            if (event.ctrlKey) selectNext() // Vim-style
+            break
+
+          case 'k':
+            if (event.ctrlKey) selectPrevious() // Vim-style
+            break
+        }
+      }
+
+      if (handled) {
+        event.preventDefault()
+        event.stopPropagation()
       }
     },
     [
       config.keyboard,
+      config.keyboardShortcuts,
       selectPrevious,
       selectNext,
       selectCurrent,
       navigateSelection,
+      matchesShortcut,
     ]
   )
 

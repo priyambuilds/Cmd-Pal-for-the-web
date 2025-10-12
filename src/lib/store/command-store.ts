@@ -15,7 +15,7 @@ import type {
  * Default configuration values
  * These are sensible defaults that work for most use cases
  */
-const DEFAULT_CONFIG: Required<CommandConfig> = {
+const DEFAULT_CONFIG: CommandConfig = {
   filter: true, // Enable filtering by default
   filterFn: undefined, // Use built-in scoring algorithm
   debounceMs: 150, // Wait 150ms after typing before searching
@@ -200,6 +200,11 @@ export class ModernCommandStore {
       clearTimeout(this.searchTimeout)
     }
 
+    // Cancel any pending async loading
+    if (this.asyncAbortController) {
+      this.asyncAbortController.abort()
+    }
+
     // Update query immediately for responsive input
     this.setState(prev => ({
       ...prev,
@@ -210,14 +215,148 @@ export class ModernCommandStore {
       },
     }))
 
-    // Debounce the actual search
-    this.searchTimeout = setTimeout(() => {
-      // Schedule search with MEDIUM priority
-      // This allows urgent operations (like item selection) to run first
-      this.scheduler.schedule(SchedulerPriority.NORMAL, 'perform-search', () =>
-        this.performSearch(query)
-      )
-    }, this.state.config.debounceMs || 150)
+    // Set up async loading if configured
+    if (this.state.config.asyncLoader) {
+      this.setupAsyncLoading(query)
+    }
+
+    // Always perform local search (static items)
+    this.performSearch(query)
+  }
+
+  /**
+   * Async loading state
+   */
+  private asyncTimeout: NodeJS.Timeout | null = null
+  private asyncAbortController: AbortController | null = null
+
+  /**
+   * Set up async data loading with separate debouncing
+   */
+  private setupAsyncLoading = (query: string): void => {
+    if (this.asyncTimeout) {
+      clearTimeout(this.asyncTimeout)
+    }
+
+    // Use separate debounce time for async loading (longer to avoid spam)
+    const debounceMs = this.state.config.loaderDebounceMs || 300
+
+    this.asyncTimeout = setTimeout(() => {
+      this.performAsyncSearch(query)
+    }, debounceMs)
+  }
+
+  /**
+   * Perform async search and merge with results
+   */
+  private async performAsyncSearch(query: string): Promise<void> {
+    const loader = this.state.config.asyncLoader
+    if (!loader) return
+
+    // Create abort controller for this request
+    this.asyncAbortController = new AbortController()
+
+    try {
+      // Call async loader
+      const asyncItems = await loader(query)
+
+      // Only update if this request wasn't aborted and query still matches
+      if (
+        !this.asyncAbortController.signal.aborted &&
+        this.state.search.query === query
+      ) {
+        // Merge async items with existing static items
+        this.setState(prev => {
+          const allItems = new Map(prev.items)
+          const asyncItemMap = new Map<string, CommandItem>()
+
+          // Add async items (may overwrite static items if same ID)
+          asyncItems.forEach(item => {
+            allItems.set(item.id, item)
+            asyncItemMap.set(item.id, item)
+          })
+
+          // Re-run search to include async items
+          const refreshedResults = this.computeSearchResults(
+            query,
+            Array.from(allItems.values())
+          )
+
+          return {
+            ...prev,
+            items: allItems,
+            search: {
+              ...prev.search,
+              results: refreshedResults,
+              loading: false,
+              empty: refreshedResults.length === 0 && query.trim() !== '',
+            },
+          }
+        })
+
+        // Schedule DOM sorting for async items
+        this.scheduler.schedule(
+          SchedulerPriority.NORMAL,
+          'sort-async-items',
+          () => this.sort()
+        )
+      }
+    } catch (error) {
+      if (!this.asyncAbortController.signal.aborted) {
+        console.error('[CMDK] Async loader error:', error)
+        // Could emit error event here
+      }
+    } finally {
+      if (!this.asyncAbortController.signal.aborted) {
+        this.asyncAbortController = null
+      }
+    }
+  }
+
+  /**
+   * Extract search logic into reusable function
+   */
+  private computeSearchResults = (
+    query: string,
+    items: CommandItem[]
+  ): CommandItem[] => {
+    const { filter, filterFn, maxResults, caseSensitive } = this.state.config
+
+    if (!filter) {
+      return items
+    }
+
+    if (query.trim() === '') {
+      return items
+    }
+
+    let results: CommandItem[]
+
+    if (filterFn) {
+      results = items.filter(item => filterFn(item, query))
+    } else {
+      // Use score cache for performance
+      results = items
+        .map(item => {
+          const cacheKey = `${item.id}:${query}`
+          let score = this.scoreCache.get(cacheKey)
+
+          if (score === undefined) {
+            score = this.calculateItemScore(item, query, caseSensitive || false)
+            this.scoreCache.set(cacheKey, score)
+          }
+
+          return { ...item, score }
+        })
+        .filter(item => (item.score || 0) > 0)
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+    }
+
+    if (maxResults && results.length > maxResults) {
+      results = results.slice(0, maxResults)
+    }
+
+    return results
   }
 
   /**
@@ -368,11 +507,12 @@ export class ModernCommandStore {
       }
     })
 
-    // Schedule re-search with MEDIUM priority
-    this.scheduler.schedule(
-      SchedulerPriority.NORMAL,
-      'refilter-after-add',
-      () => this.performSearch(this.state.search.query)
+    // Perform re-search immediately and sort DOM
+    this.performSearch(this.state.search.query)
+
+    // Schedule DOM sorting after re-search
+    this.scheduler.schedule(SchedulerPriority.NORMAL, 'sort-items', () =>
+      this.sort()
     )
 
     this.eventEmitter.emit('item:add', { item, groupId })
@@ -587,6 +727,49 @@ export class ModernCommandStore {
    * Emit a store event
    */
   emit = this.eventEmitter.emit.bind(this.eventEmitter)
+
+  /**
+   * Sort DOM elements by score (signature feature of CMDK)
+   * Physically reorders DOM elements based on search relevance
+   */
+  sort = (): void => {
+    if (!this.state.search.query || !this.state.config.filter) {
+      return // Don't sort if no search or filtering disabled
+    }
+
+    // Find the command list container in DOM
+    const listElement = document.querySelector('[cmdk-list]')
+    if (!listElement) return
+
+    // Get all item elements that are currently rendered
+    const itemElements = Array.from(
+      listElement.querySelectorAll('[data-command-item]')
+    )
+
+    if (itemElements.length === 0) return
+
+    // Sort elements by their position in results array (highest score first)
+    const sortedElements = itemElements.sort((a, b) => {
+      const aId = a.getAttribute('data-command-item') || ''
+      const bId = b.getAttribute('data-command-item') || ''
+      const aIndex = this.state.search.results.findIndex(
+        item => item.id === aId
+      )
+      const bIndex = this.state.search.results.findIndex(
+        item => item.id === bId
+      )
+      return aIndex - bIndex // Lower index = higher score
+    })
+
+    // Reorder DOM elements - place them in sorted order
+    sortedElements.forEach(element => {
+      listElement.appendChild(
+        element.parentElement === listElement
+          ? element
+          : element.closest('[data-command-item]') || element
+      )
+    })
+  }
 
   /**
    * Cleanup - call when store is no longer needed
