@@ -61,6 +61,17 @@ export interface CommandGroup {
 }
 
 /**
+ * NavigationState tracks current navigation context
+ *
+ * When you drill into a group, we track the navigation path
+ */
+export interface NavigationState {
+  currentGroup: string | null // ID of group we're currently viewing (null = root view)
+  groupPath: string[] // Stack of group IDs for breadcrumb navigation ([parent, child])
+  isGroupView: boolean // True when viewing items within a specific group
+}
+
+/**
  * SearchState tracks the current search and results
  *
  * This is what changes when you type in the search box
@@ -71,6 +82,7 @@ export interface SearchState {
   selectedId: string | undefined // Currently highlighted item ID
   loading?: boolean // Show loading indicator
   empty?: boolean // True when search returns no results
+  navigation: NavigationState // Current navigation context
 }
 
 /**
@@ -237,6 +249,7 @@ export interface CommandGroupProps extends DivProps {
   value?: string // Optional: unique identifier
   heading?: ReactNode // Optional: group heading content
   forceMount?: boolean // Optional: render even when empty
+  selectable?: boolean // Optional: allow navigation into this group
 }
 
 /**
@@ -291,6 +304,10 @@ export interface UseCommandStore {
   updateConfig: (config: Partial<CommandConfig>) => void
   getSelectedItem: () => CommandItem | undefined
   navigateSelection: (direction: 'up' | 'down' | 'first' | 'last') => void
+  navigateIntoGroup: (groupId: string) => void
+  navigateBack: () => void
+  canNavigateBack: () => boolean
+  getCurrentGroup: () => CommandGroup | null
 }
 
 /**

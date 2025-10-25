@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
 import { Primitive } from '@radix-ui/react-primitive'
-import { useCommandResults } from '../../hooks/use-command-store'
+import {
+  useCommandResults,
+  useCommandStore,
+} from '../../hooks/use-command-store'
 import { useCommandContext } from '../providers/CommandProvider'
 import type { CommandGroupProps } from '../../types'
 import type { ReactElement } from 'react'
@@ -16,9 +19,10 @@ import type { ReactElement } from 'react'
  *
  * Features:
  * - Auto-hide when empty (unless forceMount)
- * - Optional heading
+ * - Optional heading with navigation (when selectable)
  * - Accessibility (ARIA group pattern)
  * - Counts visible children
+ * - Can navigate into focused group view
  *
  * Usage:
  * ```
@@ -27,7 +31,7 @@ import type { ReactElement } from 'react'
  *     <CommandItem value="1">Recently used</CommandItem>
  *   </CommandGroup>
  *
- *   <CommandGroup heading="Actions">
+ *   <CommandGroup heading="Actions" selectable>
  *     <CommandItem value="2">Create new</CommandItem>
  *   </CommandGroup>
  * </CommandList>

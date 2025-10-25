@@ -1,7 +1,7 @@
 // src/lib/store/command-store.ts
 
 import { commandScore } from '../scoring/command-score'
-import { getScheduler, SchedulerPriority } from '../scheduler/dom-scheduler'
+import { getScheduler } from '../scheduler/dom-scheduler'
 import type {
   CommandStore,
   CommandItem,
@@ -133,6 +133,11 @@ export class ModernCommandStore {
         selectedId: undefined,
         loading: false,
         empty: false,
+        navigation: {
+          currentGroup: null,
+          groupPath: [],
+          isGroupView: false,
+        },
       },
       groups: new Map(),
       items: new Map(),
@@ -295,11 +300,7 @@ export class ModernCommandStore {
         })
 
         // Schedule DOM sorting for async items
-        this.scheduler.schedule(
-          SchedulerPriority.NORMAL,
-          'sort-async-items',
-          () => this.sort()
-        )
+        this.scheduler.schedule(() => this.sort())
       }
     } catch (error) {
       if (!this.asyncAbortController.signal.aborted) {
@@ -363,26 +364,48 @@ export class ModernCommandStore {
    * performSearch with memoization
    *
    * Now caches scores to avoid recalculating for same items
+   * Cache is cleaned up periodically to prevent memory leaks
    */
-  private scoreCache = new Map<string, number>() // NEW: Score cache
+  private scoreCache = new Map<string, number>()
+  private cacheCleanupCounter = 0
 
   private performSearch = (query: string): void => {
     const { filter, filterFn, maxResults, caseSensitive } = this.state.config
+    const { currentGroup } = this.state.search.navigation
+
     let results: CommandItem[] = []
 
-    const allItems = Array.from(this.state.items.values())
+    // Get base items - either all items or filtered by current group
+    let baseItems: CommandItem[]
+    if (currentGroup) {
+      // In group view: only show items from the current group
+      const group = this.state.groups.get(currentGroup)
+      if (group) {
+        baseItems = group.items
+      } else {
+        baseItems = []
+      }
+    } else {
+      // Root view: show all items
+      baseItems = Array.from(this.state.items.values())
+    }
 
     if (!filter) {
-      results = allItems
+      results = baseItems
     } else if (query.trim() === '') {
-      results = allItems
-      this.scoreCache.clear() // Clear cache when query is empty
+      results = baseItems
+      // Periodic cleanup of cache
+      this.cacheCleanupCounter++
+      if (this.cacheCleanupCounter > 10) {
+        this.scoreCache.clear()
+        this.cacheCleanupCounter = 0
+      }
     } else {
       if (filterFn) {
-        results = allItems.filter(item => filterFn(item, query))
+        results = baseItems.filter(item => filterFn(item, query))
       } else {
         // Use score cache for performance
-        results = allItems
+        results = baseItems
           .map(item => {
             const cacheKey = `${item.id}:${query}`
             let score = this.scoreCache.get(cacheKey)
@@ -429,6 +452,83 @@ export class ModernCommandStore {
   }
 
   /**
+   * Navigate into a group (shows only items in that group)
+   */
+  navigateIntoGroup = (groupId: string): void => {
+    const group = this.state.groups.get(groupId)
+    if (!group) return
+
+    this.setState(prev => {
+      const groupPath = [...prev.search.navigation.groupPath, groupId]
+
+      return {
+        ...prev,
+        search: {
+          ...prev.search,
+          navigation: {
+            currentGroup: groupId,
+            groupPath,
+            isGroupView: true,
+          },
+          query: '', // Clear query when entering group
+          selectedId: undefined,
+          results: [],
+          loading: false,
+          empty: false,
+        },
+      }
+    })
+
+    // Update results to show only group items
+    this.performSearch('')
+  }
+
+  /**
+   * Navigate back from group view
+   */
+  navigateBack = (): void => {
+    this.setState(prev => {
+      const newPath = [...prev.search.navigation.groupPath]
+      newPath.pop() // Remove current group
+
+      const newGroup =
+        newPath.length > 0 ? (newPath[newPath.length - 1] as string) : null
+
+      return {
+        ...prev,
+        search: {
+          ...prev.search,
+          navigation: {
+            currentGroup: newGroup,
+            groupPath: newPath,
+            isGroupView: newPath.length > 0,
+          },
+          query: '', // Clear query when leaving group
+          selectedId: undefined,
+        },
+      }
+    })
+
+    // Update results to show items for new context
+    this.performSearch('')
+  }
+
+  /**
+   * Check if we can navigate back
+   */
+  canNavigateBack = (): boolean => {
+    return this.state.search.navigation.groupPath.length > 0
+  }
+
+  /**
+   * Get current group info
+   */
+  getCurrentGroup = (): CommandGroup | null => {
+    const { currentGroup } = this.state.search.navigation
+    return currentGroup ? this.state.groups.get(currentGroup) || null : null
+  }
+
+  /**
    * Calculate search score for an item
    * Checks both value and keywords
    */
@@ -466,18 +566,16 @@ export class ModernCommandStore {
     const item = this.state.items.get(id)
     if (!item || item.disabled) return
 
-    // Schedule with HIGH priority - selection is important!
-    this.scheduler.schedule(SchedulerPriority.HIGH, 'select-item', () => {
-      this.setState(prev => ({
-        ...prev,
-        search: {
-          ...prev.search,
-          selectedId: id,
-        },
-      }))
+    // Select item immediately
+    this.setState(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        selectedId: id,
+      },
+    }))
 
-      this.eventEmitter.emit('item:select', { item })
-    })
+    this.eventEmitter.emit('item:select', { item })
   }
 
   /**
@@ -507,13 +605,11 @@ export class ModernCommandStore {
       }
     })
 
-    // Perform re-search immediately and sort DOM
+    // Perform re-search to include new item
     this.performSearch(this.state.search.query)
 
-    // Schedule DOM sorting after re-search
-    this.scheduler.schedule(SchedulerPriority.NORMAL, 'sort-items', () =>
-      this.sort()
-    )
+    // Schedule DOM sorting
+    this.scheduler.schedule(() => this.sort())
 
     this.eventEmitter.emit('item:add', { item, groupId })
   }
@@ -542,11 +638,7 @@ export class ModernCommandStore {
       }
     })
 
-    this.scheduler.schedule(
-      SchedulerPriority.NORMAL,
-      'refilter-after-remove',
-      () => this.performSearch(this.state.search.query)
-    )
+    this.scheduler.schedule(() => this.performSearch(this.state.search.query))
 
     this.eventEmitter.emit('item:remove', { id })
   }
@@ -574,11 +666,7 @@ export class ModernCommandStore {
       }
     })
 
-    this.scheduler.schedule(
-      SchedulerPriority.NORMAL,
-      'refilter-after-remove',
-      () => this.performSearch(this.state.search.query)
-    )
+    this.scheduler.schedule(() => this.performSearch(this.state.search.query))
 
     this.eventEmitter.emit('group:add', { group })
   }
@@ -609,11 +697,7 @@ export class ModernCommandStore {
       }
     })
 
-    this.scheduler.schedule(
-      SchedulerPriority.NORMAL,
-      'refilter-after-remove',
-      () => this.performSearch(this.state.search.query)
-    )
+    this.scheduler.schedule(() => this.performSearch(this.state.search.query))
 
     this.eventEmitter.emit('group:remove', { id })
   }
@@ -643,6 +727,11 @@ export class ModernCommandStore {
         selectedId: undefined,
         loading: false,
         empty: false,
+        navigation: {
+          currentGroup: null,
+          groupPath: [],
+          isGroupView: false,
+        },
       },
     }))
   }
@@ -778,7 +867,7 @@ export class ModernCommandStore {
     if (this.searchTimeout) {
       clearTimeout(this.searchTimeout)
     }
-    this.scheduler.cancelAll() // Cancel pending tasks
+    // Tasks complete automatically
     this.scoreCache.clear() // Clear cache
     this.listeners.clear()
     this.eventEmitter.clear()

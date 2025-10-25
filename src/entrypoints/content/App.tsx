@@ -6,7 +6,7 @@
 // entrypoints/content/App.tsx
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Command } from '../../components/command/Command'
+import { CommandDialog } from '../../components/command/CommandDialog'
 import { CommandInput } from '../../components/command/CommandInput'
 import { CommandList } from '../../components/command/CommandList'
 import { CommandItem } from '../../components/command/CommandItem'
@@ -201,42 +201,9 @@ export default function App() {
     setTimeout(() => setOpen(false), 100)
   }, [])
 
-  // ============================================================================
-  // COMBINED COMMAND ITEMS
-  // ============================================================================
-
-  const allCommands = useMemo(() => {
-    const combined = [...staticCommands]
-
-    // Add async results if available
-    if (asyncResults.length > 0) {
-      combined.push(...asyncResults)
-    }
-
-    // Add search history as suggestions (when no query)
-    if (!query.trim() && searchHistory.length > 0) {
-      const historyItems: CommandItemType[] = searchHistory.map(
-        (hist, index) => ({
-          id: `history-${index}`,
-          value: hist,
-          keywords: ['recent', 'history', 'previous'],
-        })
-      )
-      combined.push(...historyItems)
-    }
-
-    return combined
-  }, [asyncResults, query])
-
-  // ============================================================================
-  // MAIN RENDER
-  // ============================================================================
-
-  if (!open) return null
-
   return (
     <CommandErrorBoundary
-      fallback={(error, errorInfo) => (
+      fallback={(error: any, errorInfo: any) => (
         <div
           style={{
             position: 'fixed',
@@ -280,72 +247,72 @@ export default function App() {
         </div>
       )}
     >
-      {/* Backdrop */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 9999,
-        }}
-        onClick={() => setOpen(false)}
-      />
-
       {/* Command Palette */}
-      <div
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        config={{
+          asyncLoader,
+          loaderDebounceMs: 300,
+          ...scoringConfig,
+          workers: { enabled: true, minItems: 10 },
+          cache: { enabled: true, persist: true },
+          keyboardShortcuts: {
+            navigateUp: ['ArrowUp', 'k'],
+            navigateDown: ['ArrowDown', 'j'],
+            select: ['Enter'],
+            close: ['Escape'],
+          },
+        }}
         style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '90%',
-          maxWidth: '600px',
-          background: 'black',
           borderRadius: '12px',
-          boxShadow:
-            '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-          zIndex: 10000,
-          overflow: 'hidden',
+          maxWidth: '600px',
+          width: '90%',
+          background: 'black',
         }}
       >
-        <Command
-          config={{
-            asyncLoader,
-            loaderDebounceMs: 300,
-            ...scoringConfig,
-            workers: { enabled: true, minItems: 10 },
-            cache: { enabled: true, persist: true },
-            keyboardShortcuts: {
-              navigateUp: ['ArrowUp', 'k'],
-              navigateDown: ['ArrowDown', 'j'],
-              select: ['Enter'],
-              close: ['Escape'],
-            },
+        <CommandInput
+          placeholder="Search commands, GitHub repos, or type 'help'..."
+          value={query}
+          onValueChange={setQuery}
+          style={{
+            width: '100%',
+            padding: '16px 20px',
+            border: 'none',
+            borderBottom: '1px solid #e5e7eb',
+            fontSize: '16px',
+            outline: 'none',
+            background: 'transparent',
+          }}
+        />
+
+        <CommandList
+          style={{
+            maxHeight: '400px',
+            overflowY: 'auto',
           }}
         >
-          <CommandInput
-            placeholder="Search commands, GitHub repos, or type 'help'..."
-            value={query}
-            onValueChange={setQuery}
-            style={{
-              width: '100%',
-              padding: '16px 20px',
-              border: 'none',
-              borderBottom: '1px solid #e5e7eb',
-              fontSize: '16px',
-              outline: 'none',
-              background: 'transparent',
-            }}
-          />
+          <CommandEmpty>
+            <div
+              style={{
+                padding: '32px 16px',
+                textAlign: 'center',
+                color: '#6b7280',
+                fontSize: '14px',
+              }}
+            >
+              {query
+                ? `No results for "${query}"`
+                : 'Start typing to search...'}
+              <br />
+              <small>
+                Try "gh react" for GitHub search or "help" for documentation
+              </small>
+            </div>
+          </CommandEmpty>
 
-          <CommandList
-            style={{
-              maxHeight: '400px',
-              overflowY: 'auto',
-            }}
-          >
-            <CommandEmpty>
+          {isLoadingAsync && (
+            <CommandLoading>
               <div
                 style={{
                   padding: '32px 16px',
@@ -354,48 +321,51 @@ export default function App() {
                   fontSize: '14px',
                 }}
               >
-                {query
-                  ? `No results for "${query}"`
-                  : 'Start typing to search...'}
-                <br />
-                <small>
-                  Try "gh react" for GitHub search or "help" for documentation
-                </small>
-              </div>
-            </CommandEmpty>
-
-            {isLoadingAsync && (
-              <CommandLoading>
                 <div
                   style={{
-                    padding: '32px 16px',
-                    textAlign: 'center',
-                    color: '#6b7280',
-                    fontSize: '14px',
+                    display: 'inline-block',
+                    animation: 'spin 1s linear infinite',
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'inline-block',
-                      animation: 'spin 1s linear infinite',
-                    }}
-                  >
-                    🔄
-                  </div>
-                  <div style={{ marginTop: '8px' }}>Searching...</div>
+                  🔄
                 </div>
-              </CommandLoading>
-            )}
+                <div style={{ marginTop: '8px' }}>Searching...</div>
+              </div>
+            </CommandLoading>
+          )}
 
-            {/* Static Commands */}
-            <CommandGroup heading="Commands">
-              {staticCommands.slice(0, 8).map(cmd => (
-                <CommandItem
-                  key={cmd.id}
-                  {...cmd}
-                  onSelect={handleCommandSelect}
+          {/* Static Commands */}
+          <CommandGroup heading="Commands">
+            {staticCommands.slice(0, 8).map(cmd => (
+              <CommandItem key={cmd.id} {...cmd} onSelect={handleCommandSelect}>
+                {/* Simple custom rendering with icons */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
                 >
-                  {/* Simple custom rendering with icons */}
+                  {cmd.id.includes('file') && <span>📄</span>}
+                  {cmd.id.includes('edit') && <span>✏️</span>}
+                  {cmd.id.includes('view') && <span>👁️</span>}
+                  {cmd.id.includes('help') && <span>❓</span>}
+                  <span>{cmd.value}</span>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+
+          {/* Search History (no query) */}
+          {!query && searchHistory.length > 0 && (
+            <CommandGroup heading="Recent Searches">
+              {searchHistory.slice(0, 3).map((hist, idx) => (
+                <CommandItem
+                  key={`history-${idx}`}
+                  value={hist}
+                  keywords={['recent']}
+                  onSelect={() => setQuery(hist)}
+                >
                   <div
                     style={{
                       display: 'flex',
@@ -403,75 +373,47 @@ export default function App() {
                       gap: '8px',
                     }}
                   >
-                    {cmd.id.includes('file') && <span>📄</span>}
-                    {cmd.id.includes('edit') && <span>✏️</span>}
-                    {cmd.id.includes('view') && <span>👁️</span>}
-                    {cmd.id.includes('help') && <span>❓</span>}
-                    <span>{cmd.value}</span>
+                    <span>🕐</span>
+                    <span>{hist}</span>
+                    <small style={{ color: '#6b7280', marginLeft: 'auto' }}>
+                      recent
+                    </small>
                   </div>
                 </CommandItem>
               ))}
             </CommandGroup>
+          )}
 
-            {/* Search History (no query) */}
-            {!query && searchHistory.length > 0 && (
-              <CommandGroup heading="Recent Searches">
-                {searchHistory.slice(0, 3).map((hist, idx) => (
-                  <CommandItem
-                    key={`history-${idx}`}
-                    value={hist}
-                    keywords={['recent']}
-                    onSelect={() => setQuery(hist)}
+          {/* Async Results */}
+          {asyncResults.length > 0 && (
+            <CommandGroup heading="GitHub Repositories">
+              {asyncResults.map(result => (
+                <CommandItem
+                  key={result.id}
+                  {...result}
+                  onSelect={handleCommandSelect}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
                   >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <span>🕐</span>
-                      <span>{hist}</span>
-                      <small style={{ color: '#6b7280', marginLeft: 'auto' }}>
-                        recent
+                    <span>🐙</span>
+                    <div>
+                      <div>{result.value}</div>
+                      <small style={{ color: '#6b7280' }}>
+                        GitHub Repository
                       </small>
                     </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-
-            {/* Async Results */}
-            {asyncResults.length > 0 && (
-              <CommandGroup heading="GitHub Repositories">
-                {asyncResults.map(result => (
-                  <CommandItem
-                    key={result.id}
-                    {...result}
-                    onSelect={handleCommandSelect}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <span>🐙</span>
-                      <div>
-                        <div>{result.value}</div>
-                        <small style={{ color: '#6b7280' }}>
-                          GitHub Repository
-                        </small>
-                      </div>
-                    </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
-      </div>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+        </CommandList>
+      </CommandDialog>
 
       {/* Status indicator */}
       <div

@@ -106,6 +106,10 @@ export function useCommandStore(
       updateConfig: store.updateConfig,
       getSelectedItem: store.getSelectedItem,
       navigateSelection: store.navigateSelection,
+      navigateIntoGroup: store.navigateIntoGroup,
+      navigateBack: store.navigateBack,
+      canNavigateBack: store.canNavigateBack,
+      getCurrentGroup: store.getCurrentGroup,
     }),
     [store]
   )

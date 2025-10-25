@@ -6,10 +6,7 @@ import {
 } from '../../hooks/use-command-store'
 import { useCommandContext } from '../providers/CommandProvider'
 import type { CommandListProps } from '../../types'
-import {
-  getScheduler,
-  SchedulerPriority,
-} from '../../lib/scheduler/dom-scheduler'
+import { getScheduler } from '../../lib/scheduler/dom-scheduler'
 
 /**
  * CommandList - Container for command items and groups
@@ -46,55 +43,42 @@ export function CommandList({
   const scheduler = getScheduler()
 
   /**
-   * Auto-scroll with scheduler to keep selected item visible
-   * uses LOW priority scheduling to prevent blocking
-   * urgent operations like filtering and item selection
-   * When user navigates with keyboard, ensure the selected
-   * item is always visible in the scrollable area.
+   * Auto-scroll to keep selected item visible
+   * Simplified scrolling without complex priority system
    */
   useEffect(() => {
     if (!selectedItem || !listRef.current) return
 
-    // Schedule scroll with LOW priority
-    // This ensures filtering/selection completes before scrolling
-    scheduler.schedule(
-      SchedulerPriority.LOW,
-      `scroll-to-${selectedItem.id}`,
-      () => {
-        if (!listRef.current) return
+    // Simple scroll scheduling
+    scheduler.schedule(() => {
+      if (!listRef.current) return
 
-        // Find the selected item's DOM element
-        const selectedElement = listRef.current.querySelector(
-          `[data-command-item="${selectedItem.id}"]`
-        ) as HTMLElement
+      // Find the selected item's DOM element
+      const selectedElement = listRef.current.querySelector(
+        `[data-command-item="${selectedItem.id}"]`
+      ) as HTMLElement
 
-        if (!selectedElement) return
+      if (!selectedElement) return
 
-        // Get scroll container and element positions
-        const listRect = listRef.current.getBoundingClientRect()
-        const itemRect = selectedElement.getBoundingClientRect()
+      // Get scroll container and element positions
+      const listRect = listRef.current.getBoundingClientRect()
+      const itemRect = selectedElement.getBoundingClientRect()
 
-        // Check if item is above visible area
-        if (itemRect.top < listRect.top) {
-          selectedElement.scrollIntoView({
-            block: 'nearest',
-            behavior: 'smooth',
-          })
-        }
-        // Check if item is below visible area
-        else if (itemRect.bottom > listRect.bottom) {
-          selectedElement.scrollIntoView({
-            block: 'nearest',
-            behavior: 'smooth',
-          })
-        }
+      // Check if item is above visible area
+      if (itemRect.top < listRect.top) {
+        selectedElement.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth',
+        })
       }
-    )
-
-    // ✨ NEW: Cleanup - cancel pending scroll if selection changes quickly
-    return () => {
-      scheduler.cancel(`scroll-to-${selectedItem.id}`)
-    }
+      // Check if item is below visible area
+      else if (itemRect.bottom > listRect.bottom) {
+        selectedElement.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth',
+        })
+      }
+    })
   }, [selectedItem, scheduler])
 
   /**

@@ -84,10 +84,16 @@ export function Command({
   const currentValue = isControlledValue ? controlledValue : state.search.query
 
   // Initialize with default value (uncontrolled mode)
+  // Delay to ensure all child items are registered first
   useEffect(() => {
     if (!isControlledValue && defaultValue && state.search.query === '') {
-      setQuery(defaultValue)
+      // Delay by a tick to ensure children mount first
+      const timeout = setTimeout(() => {
+        setQuery(defaultValue)
+      }, 0)
+      return () => clearTimeout(timeout)
     }
+    return undefined // Explicit return to satisfy TypeScript
   }, [defaultValue, isControlledValue, state.search.query, setQuery])
 
   // Sync controlled value to store
